@@ -3,7 +3,7 @@
 # ![Tessera](docs/media/banner.png)
 
 [![NeoForge](https://img.shields.io/badge/NeoForge-1.21.1-orange?style=for-the-badge&logo=curseforge)](https://neoforged.net/)
-[![Modrinth](https://img.shields.io/badge/Modrinth-Download-1bd96a?style=for-the-badge&logo=modrinth)](https://modrinth.com/mod/tessera)
+[![Modrinth](https://img.shields.io/badge/Modrinth-Download-1bd96a?style=for-the-badge&logo=modrinth)](https://modrinth.com/mod/tesseras)
 [![CurseForge](https://img.shields.io/badge/CurseForge-Download-f16436?style=for-the-badge&logo=curseforge)](https://www.curseforge.com/minecraft/mc-mods/tessera)
 [![License](https://img.shields.io/badge/Code-AGPLv3-blueviolet?style=for-the-badge)](#license)
 
@@ -213,7 +213,7 @@ discuss usage outside these terms.
 
 Made by **[NerdSoft](https://github.com/NerdSoftOrg)**
 
-[![Modrinth](https://img.shields.io/badge/Modrinth-Download-1bd96a?style=for-the-badge&logo=modrinth)](https://modrinth.com/mod/tessera)
+[![Modrinth](https://img.shields.io/badge/Modrinth-Download-1bd96a?style=for-the-badge&logo=modrinth)](https://modrinth.com/mod/tesseras)
 [![CurseForge](https://img.shields.io/badge/CurseForge-Download-f16436?style=for-the-badge&logo=curseforge)](https://www.curseforge.com/minecraft/mc-mods/tessera)
 [![Issues](https://img.shields.io/badge/issues-open_issue-f16436?style=for-the-badge&logo=github)](https://github.com/NerdSoftOrg/Tessera/issues)
 
