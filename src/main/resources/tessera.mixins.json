@@ -1,0 +1,13 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.nerdsoft.mods.tessera.mixin",
+    "compatibilityLevel": "${java}",
+    "refmap": "tessera.refmap.json",
+    "client": [
+        "SpriteLoaderMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}
