@@ -5,6 +5,7 @@
 	"compatibilityLevel": "${java}",
 	"refmap": "tessera.refmap.json",
 	"client": [
+		"KeyboardHandlerAccessor",
 		"SpriteRoutingMixin",
 		"TextureAtlasUploadMixin"
 	],

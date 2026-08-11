@@ -1,6 +1,7 @@
 package com.nerdsoft.mods.tessera.gui;
 
 import com.nerdsoft.mods.tessera.Tessera;
+import com.nerdsoft.mods.tessera.config.TesseraConfig;
 import com.nerdsoft.mods.tessera.vram.VramBudgetEngine;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
@@ -10,6 +11,7 @@ import net.neoforged.neoforge.client.event.CustomizeGuiOverlayEvent;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -40,10 +42,10 @@ public final class TesseraDebugOverlay {
 
     /**
      * Per-bucket breakdown within a single atlas -- e.g. "blocks.png/OPAQUE_BC1"
-     * vs "blocks.png/ALPHA_BC7" -- so the debug overlay can show which of
+     * vs "blocks.png/ALPHA_BC7"-- so the debug overlay can show which of
      * the three physical textures is contributing how much to an atlas's
      * total savings, not just the atlas-wide sum. Keyed by
-     * {@code atlasLocation + "/" + bucketName} rather than a nested map, to
+     * {@code atlasLocation + "/"+ bucketName} rather than a nested map, to
      * keep the accumulation semantics (additive merge, same as
      * {@link #perAtlasStats}) identical between the two maps.
      */
@@ -104,55 +106,72 @@ public final class TesseraDebugOverlay {
 
         if (mc.gui.getDebugOverlay().showDebugScreen()) {
             List<String> rightList = event.getRight();
+            List<String> tesseraLines = new ArrayList<>();
 
-            rightList.add("");
-            rightList.add(" §d[Tessera Engine]");
+            tesseraLines.add("");
+            tesseraLines.add("§d[Tessera]");
 
             int budgetTargetMB = VramBudgetEngine.getEffectiveBudgetMb();
             boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
             if (isMac) {
-                rightList.add(" BC7 Compression: §cUNSUPPORTED (macOS)§r");
-                return;
+                tesseraLines.add("Compression: §cUNSUPPORTED (macOS)§r");
+            } else if (!isCompressedAtlasActive || bytesSavedByBC7 <= 0) {
+                tesseraLines.add("Compression: §cDISABLED§r");
+                tesseraLines.add(String.format("VRAM Budget: %d MB", budgetTargetMB));
+                tesseraLines.add("VRAM: " + getHardwareVramUsage());
+            } else {
+                tesseraLines.add("Compression: §aENABLED§r");
+
+                double savedMB = bytesSavedByBC7 / (1024.0 * 1024.0);
+                double compressedMB = totalCompressedAtlasBytes / (1024.0 * 1024.0);
+                double originalMB = compressedMB + savedMB;
+                double percentageSaved = originalMB > 0 ? (savedMB / originalMB) * 100.0 : 0;
+
+                tesseraLines.add(String.format("Atlas VRAM: §b%.2f MB§r / §7%.2f MB§r (§a-%.1f%%§r)",
+                        compressedMB, originalMB, percentageSaved));
+                tesseraLines.add(String.format("Saved: §a%.2f MB§r", savedMB));
+                tesseraLines.add(String.format("VRAM Budget: %d MB", budgetTargetMB));
+
+                tesseraLines.add("GPU VRAM: " + getHardwareVramUsage());
+
+                if (TesseraConfig.SHOW_EXTENDED_DEBUG_BREAKDOWN.get()) {
+                    appendPerAtlasBreakdown(tesseraLines);
+                }
             }
 
-            if (!isCompressedAtlasActive || bytesSavedByBC7 <= 0) {
-                rightList.add(" BC7 Compression: §cDISABLED§r");
-                rightList.add(String.format(" VRAM Target Budget: %d MB", budgetTargetMB));
-                rightList.add(" GPU VRAM: " + getHardwareVramUsage());
-                return;
+            int insertIndex = getIndex(rightList);
+
+            if (insertIndex != -1 && insertIndex <= rightList.size()) {
+                rightList.addAll(insertIndex, tesseraLines);
+            } else {
+                rightList.addAll(tesseraLines);
             }
-
-            rightList.add(" BC7 Compression: §aENABLED§r");
-
-            double savedMB = bytesSavedByBC7 / (1024.0 * 1024.0);
-            double compressedMB = totalCompressedAtlasBytes / (1024.0 * 1024.0);
-            double originalMB = compressedMB + savedMB;
-            double percentageSaved = originalMB > 0 ? (savedMB / originalMB) * 100.0 : 0;
-
-            rightList.add(String.format(" Atlas VRAM: §b%.2f MB§r / §7%.2f MB§r (§a-%.1f%%§r)",
-                    compressedMB, originalMB, percentageSaved));
-            rightList.add(String.format(" Saved: §a%.2f MB§r", savedMB));
-            rightList.add(String.format(" VRAM Target Budget: %d MB", budgetTargetMB));
-
-            appendPerAtlasBreakdown(rightList);
-
-            rightList.add(" GPU VRAM: " + getHardwareVramUsage());
         }
     }
 
+    private static int getIndex(List<String> rightList) {
+        for (int i = 0; i < rightList.size(); i++) {
+            String line = rightList.get(i);
+            // example "4.6.0 - Build 31.0.101.4502"
+            if (line.contains(" - Build")) {
+                return i + 1;
+            }
+        }
+        return -1;
+    }
 
     private static void appendPerAtlasBreakdown(List<String> rightList) {
         if (perAtlasStats.isEmpty()) {
             return;
         }
 
-        rightList.add(" §7Per-atlas:§r");
+        rightList.add("§7Per-atlas:§r");
         perAtlasStats.entrySet().stream()
                 .sorted((a, b) -> Long.compare(b.getValue().bytesSaved(), a.getValue().bytesSaved()))
                 .forEach(entry -> {
                     double atlasSavedMB = entry.getValue().bytesSaved() / (1024.0 * 1024.0);
-                    rightList.add(String.format("  §7%s: §a%.2f MB§r", entry.getKey(), atlasSavedMB));
+                    rightList.add(String.format(" §7%s: §a%.2f MB§r", entry.getKey(), atlasSavedMB));
                     appendBucketBreakdownFor(rightList, entry.getKey());
                 });
     }
@@ -179,7 +198,7 @@ public final class TesseraDebugOverlay {
             String bucketName = bucketEntry.getKey().substring(prefix.length());
             double bucketSavedMB = bucketEntry.getValue().bytesSaved() / (1024.0 * 1024.0);
             double bucketResidentMB = bucketEntry.getValue().compressedBytes() / (1024.0 * 1024.0);
-            rightList.add(String.format("    §8%s: §a%.2f MB§r saved, §7%.2f MB§r resident",
+            rightList.add(String.format("   §8%s: §a%.2f MB§r saved, §7%.2f MB§r resident",
                     bucketName, bucketSavedMB, bucketResidentMB));
         }
     }

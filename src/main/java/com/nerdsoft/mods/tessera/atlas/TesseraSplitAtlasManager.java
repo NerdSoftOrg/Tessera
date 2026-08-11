@@ -300,6 +300,7 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
      *       the alpha atlas is always handled.</li>
      * </ul>
      */
+    @SuppressWarnings("LoggingSimilarMessage")
     private OpaqueBackgroundResult tessera$prepareOpaqueInBackground(SpriteLoader.Preparations preparations) {
         if (preparations.regions().isEmpty()) {
             return new OpaqueBackgroundResult(
@@ -370,18 +371,13 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
         return merged;
     }
 
-    private Map<ResourceLocation, AtlasSplitTarget> tessera$buildRouting(
-            SpriteLoader.Preparations opaquePrep, SpriteLoader.Preparations alphaPrep
-    ) {
-        Map<ResourceLocation, AtlasSplitTarget> routing = new HashMap<>(
-                opaquePrep.regions().size() + alphaPrep.regions().size());
-        for (ResourceLocation name : opaquePrep.regions().keySet()) {
-            routing.put(name, AtlasSplitTarget.OPAQUE);
-        }
-        for (ResourceLocation name : alphaPrep.regions().keySet()) {
-            routing.put(name, AtlasSplitTarget.ALPHA);
-        }
-        return Map.copyOf(routing);
+    private Map<ResourceLocation, AtlasSplitTarget> tessera$buildRouting(SpriteLoader.Preparations opaque, SpriteLoader.Preparations alpha) {
+        Map<ResourceLocation, AtlasSplitTarget> map = new HashMap<>();
+        opaque.regions().keySet().forEach(
+                loc -> map.put(loc, AtlasSplitTarget.OPAQUE));
+        alpha.regions().keySet().forEach(
+                loc -> map.put(loc, AtlasSplitTarget.ALPHA));
+        return map;
     }
 
     private SpriteLoader.Preparations tessera$emptyPreparations() {
@@ -445,8 +441,10 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
             AtlasCompressionDriver.CompressedAtlas opaqueCompressed = result.opaqueCompressed();
             if (opaqueHasSprites && opaqueCompressed == null && result.opaqueAssembledBuffer() != null) {
                 opaqueCompressed = AtlasCompressionDriver.compressBc1OnRenderThread(
-                        AtlasSplitTarget.OPAQUE.atlasLocation(), result.opaqueAssembledBuffer(),
-                        result.opaquePreparations().width(), result.opaquePreparations().height(),
+                        AtlasSplitTarget.OPAQUE.atlasLocation(),
+                        result.opaqueAssembledBuffer(),
+                        result.opaquePreparations().width(),
+                        result.opaquePreparations().height(),
                         result.opaquePreparations().mipLevel());
             }
 
@@ -476,16 +474,16 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
         } finally {
             profiler.pop();
         }
+
+        this.tessera$spriteRouting = result.routing();
     }
 
-    private record StitchResult(
-            SpriteLoader.Preparations opaquePreparations,
-            SpriteLoader.Preparations alphaPreparations,
-            Map<ResourceLocation, AtlasSplitTarget> routing,
-            AtlasCompressionDriver.CompressedAtlas opaqueCompressed,
-            AtlasCompressionDriver.CompressedAtlas alphaCompressed,
-            ByteBuffer opaqueAssembledBuffer
-    ) {
+    private record StitchResult(SpriteLoader.Preparations opaquePreparations,
+                                SpriteLoader.Preparations alphaPreparations,
+                                Map<ResourceLocation, AtlasSplitTarget> routing,
+                                AtlasCompressionDriver.CompressedAtlas opaqueCompressed,
+                                AtlasCompressionDriver.CompressedAtlas alphaCompressed,
+                                ByteBuffer opaqueAssembledBuffer) {
     }
 
     /**

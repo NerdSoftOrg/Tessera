@@ -10,7 +10,7 @@ public class ModEsEsLanguageProvider extends ModLanguageProvider {
 
     @Override
     protected void addTranslations() {
-        // Mod & Config Title
+        // Mod y título
         add("modmenu.name.tessera", "Tessera");
         add("modmenu.description.tessera", "Motor nativo de optimización de VRAM y compresión de texturas a BC7 en GPU.");
 
@@ -24,6 +24,7 @@ public class ModEsEsLanguageProvider extends ModLanguageProvider {
         addConfigCategory("deduplication", "Desduplicación", "Ajustes de hashing perceptual y fusión de sprites duplicados.", "Ajustes de Desduplicación");
         addConfigCategory("vramBudget", "Límite de VRAM", "Ajustes de límites de memoria VRAM y reducción de calidad.", "Ajustes de Límite de VRAM");
         addConfigCategory("cache", "Caché", "Ajustes de la ubicación del almacenamiento en disco.", "Ajustes de Caché");
+        addConfigCategory("debug", "Depuración", "Ajustes de visualización e información avanzada en la pantalla F3.", "Ajustes de Depuración");
 
         // Opciones de Compresión
         addConfigOption("compressionQuality", "Calidad de Compresión",
@@ -36,6 +37,8 @@ public class ModEsEsLanguageProvider extends ModLanguageProvider {
         // Opciones de Desduplicación
         addConfigOption("dedupSimilarityThreshold", "Umbral de Similitud",
                 "Distancia Hamming (0-64) para huellas pHash de 64 bits. Valores más bajos son más estrictos al fusionar sprites duplicados.");
+        addConfigOption("dedupSkipDuplicateEncoding", "Omitir Codificación de Duplicados",
+                "Excluye sprites casi idénticos del empaquetado para reducir aún más el uso de VRAM.");
 
         // Opciones de Límite de VRAM
         addConfigOption("vramBudgetTargetMb", "Objetivo de VRAM (MB)",
@@ -47,7 +50,18 @@ public class ModEsEsLanguageProvider extends ModLanguageProvider {
         addConfigOption("cacheDirectory", "Directorio de Caché",
                 "Nombre de la carpeta donde se almacenan en disco los bloques comprimidos en BC7.");
 
-        // Overlay debug
+        // Opciones de Depuración
+        addConfigOption("showExtendedDebugBreakdown", "Mostrar Desglose Avanzado de Atlas",
+                "Muestra el desglose detallado per-atlas y per-bucket en la pantalla de depuración F3.");
+
+        // Teclas y mensajes Debug
+        add("key.categories.tessera", "Tessera");
+        add("key.tessera.toggle_extended_debug", "Alternar Información Avanzada de Atlas");
+        add("tessera.debug.advanced_atlas_info", "Info avanzada de atlas: %s");
+
+        // Pantalla Debug
         add("tessera.overlay.vram_saved", "VRAM Ahorrada: %s MB (BC7 Activo)");
+        add("debug.state.hidden", "ocultado");
+        add("debug.state.shown", "mostrado");
     }
 }

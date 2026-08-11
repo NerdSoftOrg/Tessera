@@ -21,6 +21,10 @@ public final class NativeBridge {
 
     public static native boolean isNativeAvailable();
 
+    /**
+     * JNI Signature Mapping:
+     * (Ljava/nio/ByteBuffer;II[I[I[I[I[II)Ljava/nio/ByteBuffer;
+     */
     public static native ByteBuffer detectFamiliesAndAssemble(
             ByteBuffer pixels,
             int[] srcOffsets,
