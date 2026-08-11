@@ -61,6 +61,7 @@ public class ModEsEsLanguageProvider extends ModLanguageProvider {
 
         // Pantalla Debug
         add("tessera.overlay.vram_saved", "VRAM Ahorrada: %s MB (BC7 Activo)");
+        // Minisculas para coincidir con el vanilla
         add("debug.state.hidden", "ocultado");
         add("debug.state.shown", "mostrado");
     }

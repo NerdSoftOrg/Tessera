@@ -47,40 +47,46 @@ public final class AtlasCache {
             return Optional.empty();
         }
 
-        byte[] raw = Files.readAllBytes(file);
-        if (raw.length < HEADER_BYTES) {
-            return Optional.empty();
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
+            if (channel.size() < HEADER_BYTES) {
+                return Optional.empty();
+            }
+
+            ByteBuffer header = ByteBuffer.allocate(HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN);
+            channel.read(header);
+            header.flip();
+
+            byte[] magic = new byte[MAGIC.length];
+            header.get(magic);
+            if (!java.util.Arrays.equals(magic, MAGIC)) {
+                return Optional.empty();
+            }
+
+            int formatOrdinal = header.getInt();
+            if (formatOrdinal != format.ordinal()) {
+                // Same content hash, different requested format (or a stale
+                // cache file from before format-tagging existed) -- treat as a
+                // miss rather than returning bytes in the wrong GL format.
+                return Optional.empty();
+            }
+
+            int width = header.getInt();
+            int height = header.getInt();
+            int qualityPreset = header.getInt();
+            int payloadLength = header.getInt();
+
+            if (channel.size() < HEADER_BYTES + payloadLength) {
+                return Optional.empty();
+            }
+
+            ByteBuffer payload = ByteBuffer.allocateDirect(payloadLength);
+            while (payload.hasRemaining()) {
+                channel.read(payload);
+            }
+            payload.flip();
+
+            return Optional.of(new CachedAtlas(width, height, qualityPreset, payload));
         }
-
-        ByteBuffer header = ByteBuffer.wrap(raw, 0, HEADER_BYTES).order(ByteOrder.LITTLE_ENDIAN);
-        byte[] magic = new byte[MAGIC.length];
-        header.get(magic);
-        if (!java.util.Arrays.equals(magic, MAGIC)) {
-            return Optional.empty();
-        }
-
-        int formatOrdinal = header.getInt();
-        if (formatOrdinal != format.ordinal()) {
-            // Same content hash, different requested format (or a stale
-            // cache file from before format-tagging existed) -- treat as a
-            // miss rather than returning bytes in the wrong GL format.
-            return Optional.empty();
-        }
-
-        int width = header.getInt();
-        int height = header.getInt();
-        int qualityPreset = header.getInt();
-        int payloadLength = header.getInt();
-
-        if (raw.length < HEADER_BYTES + payloadLength) {
-            return Optional.empty();
-        }
-
-        ByteBuffer payload = ByteBuffer.allocateDirect(payloadLength);
-        payload.put(raw, HEADER_BYTES, payloadLength);
-        payload.flip();
-
-        return Optional.of(new CachedAtlas(width, height, qualityPreset, payload));
     }
 
     // False Positive

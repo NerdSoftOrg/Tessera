@@ -10,6 +10,19 @@ import java.io.File
 import java.util.*
 import javax.inject.Inject
 
+/**
+ * Builds the Rust/C++ compression bridge for a single target platform and
+ * stages the resulting shared library under `outputDir/natives/<platform>/`.
+ *
+ * macOS is intentionally unsupported: Apple caps OpenGL at 4.1 and does not
+ * reliably expose the BC7 (GL_ARB_texture_compression_bptc) or BC1/DXT
+ * (GL_EXT_texture_compression_s3tc) extensions the native bridge targets.
+ * NativeLibraryLoader.platformDirectory() on the Java side already returns
+ * null for macOS and never attempts to load a native library there, so
+ * building a macos-* artifact would just be dead weight in the jar. This
+ * task refuses to build for apple-darwin targets rather than silently
+ * producing an unused .dylib.
+ */
 abstract class BuildNativeLibraryTask @Inject constructor(
     private val execOperations: ExecOperations
 ) : DefaultTask() {
@@ -32,10 +45,41 @@ abstract class BuildNativeLibraryTask @Inject constructor(
     @get:Optional
     abstract val bc7encRdoCommit: Property<String>
 
+    /**
+     * When true, use `cargo zigbuild` instead of plain `cargo build`. Needed
+     * whenever the target triple differs from the host platform (e.g.
+     * cross-compiling to Linux from Windows), since cc-rs otherwise expects
+     * a native cross toolchain (e.g. x86_64-linux-gnu-g++) that usually
+     * isn't installed. Defaults to false; set true explicitly for
+     * cross-target builds.
+     */
+    @get:Input
+    @get:Optional
+    abstract val useZigbuild: Property<Boolean>
+
     @TaskAction
     fun build() {
         val bridgeDir = bridgeProjectDir.get().asFile
         val triple = targetTriple.orNull?.takeIf { it.isNotBlank() }
+
+        if (triple != null && isAppleDarwin(triple)) {
+            throw IllegalArgumentException(
+                "Refusing to build the native bridge for '$triple': macOS is not supported. " +
+                        "OpenGL is capped at 4.1 on macOS and does not reliably expose the BC7/BC1 " +
+                        "compression extensions this bridge targets. NativeLibraryLoader never attempts " +
+                        "to load a native library on macOS, so a macos-* artifact would go unused. " +
+                        "If this ever changes, both this check and " +
+                        "NativeLibraryLoader.platformDirectory() must be updated together."
+            )
+        }
+        if (triple == null && hostOs() == "macos") {
+            throw IllegalStateException(
+                "Refusing to build the native bridge on macOS: this platform is not supported. " +
+                        "See the class-level doc comment on BuildNativeLibraryTask for details."
+            )
+        }
+
+        val useZig = useZigbuild.getOrElse(false)
 
         val cargoArgs = buildList {
             add("cargo")
@@ -43,7 +87,11 @@ abstract class BuildNativeLibraryTask @Inject constructor(
             if (!toolchain.isNullOrEmpty()) {
                 add("+$toolchain")
             }
-            add("build")
+            if (useZig) {
+                add("zigbuild")
+            } else {
+                add("build")
+            }
             add("--release")
             if (triple != null) {
                 add("--target")
@@ -59,7 +107,13 @@ abstract class BuildNativeLibraryTask @Inject constructor(
                 environment("TESSERA_BC7ENC_RDO_COMMIT", commit)
             }
 
-            environment("RUSTFLAGS", "-C target-cpu=native")
+            // target-cpu=native is only meaningful (and safe) when building
+            // for the host's own CPU; skip it for cross builds where the
+            // build machine's CPU features don't necessarily match the
+            // target's.
+            if (triple == null) {
+                environment("RUSTFLAGS", "-C target-cpu=native")
+            }
         }
 
         val platformDir = triple?.let(::platformDirFromTriple) ?: platformDirFromHost()
@@ -85,23 +139,21 @@ abstract class BuildNativeLibraryTask @Inject constructor(
         return candidate.takeIf { it.exists() }
     }
 
+    private fun isAppleDarwin(triple: String): Boolean = triple.contains("apple-darwin")
+
     private fun libraryFileName(os: String): String = when (os) {
         "windows" -> "tessera_bridge.dll"
-        "macos" -> "libtessera_bridge.dylib"
         else -> "libtessera_bridge.so"
     }
 
     private fun platformDirFromTriple(triple: String): String = when {
         triple.contains("pc-windows") -> "windows-x86_64"
-        triple.contains("apple-darwin") && triple.startsWith("aarch64") -> "macos-aarch64"
-        triple.contains("apple-darwin") -> "macos-x86_64"
         triple.contains("linux") && triple.startsWith("aarch64") -> "linux-aarch64"
         else -> "linux-x86_64"
     }
 
     private fun osFromTriple(triple: String): String = when {
         triple.contains("pc-windows") -> "windows"
-        triple.contains("apple-darwin") -> "macos"
         else -> "linux"
     }
 

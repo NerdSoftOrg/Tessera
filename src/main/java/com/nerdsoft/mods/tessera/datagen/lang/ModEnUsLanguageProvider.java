@@ -61,6 +61,7 @@ public class ModEnUsLanguageProvider extends ModLanguageProvider {
 
         // Debug Overlay
         add("tessera.overlay.vram_saved", "VRAM Saved: %s MB (BC7 Active)");
+        // LowerCases for match vanilla
         add("debug.state.hidden", "hidden");
         add("debug.state.shown", "shown");
     }
