@@ -1,10 +1,10 @@
-name: Release
+name: Build and Package
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch: {}
+  push:
+    branches:
+      - master
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,13 +18,13 @@ jobs:
         include:
           - os: ubuntu-latest
             platform_dir: linux-x86_64
-            target: ""
+            target: x86_64-unknown-linux-gnu
           - os: ubuntu-latest
             platform_dir: linux-aarch64
             target: aarch64-unknown-linux-gnu
           - os: windows-latest
             platform_dir: windows-x86_64
-            target: ""
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,20 +34,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # cc-rs (native build-dependency) auto-discovers MSVC via the
-      # SetupConfiguration COM API on windows-latest without needing
-      # vcvarsall.bat, as long as the target is the standard
-      # x86_64-pc-windows-msvc triple used here. If windows-latest's
-      # image migration ever changes that (e.g. only pre-release VS
-      # available, or an ARM64 runner), switch to ilammy/msvc-dev-cmd
-      # before this step.
       - name: Verify MSVC toolchain is discoverable
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           if (-not (Test-Path $vswhere)) {
-            Write-Error "vswhere.exe not found; MSVC build tools may be missing on this runner image. See workflow comment above this step."
+            Write-Error "vswhere.exe not found; MSVC build tools may be missing on this runner image."
             exit 1
           }
           & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -78,13 +71,7 @@ jobs:
 
       - name: cargo build --release
         working-directory: native/bridge
-        shell: bash
-        run: |
-          if [ -n "${{ matrix.target }}" ]; then
-            cargo build --release --target ${{ matrix.target }}
-          else
-            cargo build --release
-          fi
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Stage native library
         shell: bash
@@ -95,11 +82,8 @@ jobs:
           else
             LIB_NAME="libtessera_bridge.so"
           fi
-          if [ -n "${{ matrix.target }}" ]; then
-            SRC="native/bridge/target/${{ matrix.target }}/release/$LIB_NAME"
-          else
-            SRC="native/bridge/target/release/$LIB_NAME"
-          fi
+          
+          SRC="native/bridge/target/${{ matrix.target }}/release/$LIB_NAME"
           cp "$SRC" "staged-natives/natives/${{ matrix.platform_dir }}/$LIB_NAME"
 
       - name: Upload native artifact
@@ -145,9 +129,6 @@ jobs:
 
       - name: Verify JAR contains all natives
         run: |
-          # buildAndCollect (build.gradle.kts) copies the jar task's output
-          # into build/libs/<mod.version>/, e.g. build/libs/0.1.0/. Exclude
-          # -sources.jar / -dev.jar variants some tasks may also emit there.
           JAR_PATH=$(find build/libs -mindepth 2 -maxdepth 2 -name "*.jar" \
             ! -name "*-sources.jar" ! -name "*-dev.jar" | sort | head -n1)
           if [ -z "$JAR_PATH" ]; then
@@ -170,10 +151,3 @@ jobs:
           name: tessera-jar
           path: build/libs/**/*.jar
           if-no-files-found: error
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: build/libs/**/*.jar
-          generate_release_notes: true
