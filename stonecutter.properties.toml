@@ -13,7 +13,7 @@ deps_bc7enc_rdo_commit = "b9438627eef73a1157e84201b6fa6eb2ffd6d9f0"
 
 ["1.21.1"]
 minecraft_version = "1.21.1"
-minecraft_version_range = "[1.21.1,1.21.2)"
+minecraft_version_range = "[1.21,1.21.2)"
 
 neo_version = "21.1.248"
 neo_version_range = "[21.0,21.2)"

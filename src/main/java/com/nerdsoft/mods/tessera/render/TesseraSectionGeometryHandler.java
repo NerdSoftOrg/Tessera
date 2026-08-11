@@ -75,7 +75,9 @@ import java.util.Map;
  * vanilla already does, on the same already-off-main-thread compile
  * worker.
  */
-@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT)
+// Compatibility for 1.21
+@SuppressWarnings("removal")
+@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class TesseraSectionGeometryHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/SectionGeometryHandler");

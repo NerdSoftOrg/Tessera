@@ -1,5 +1,3 @@
-// build.rs
-
 use std::path::Path;
 use std::process::Command;
 
@@ -166,25 +164,41 @@ fn vendor_sources_exist(vendor_dir: &Path) -> bool {
 /// * `build` - The cc::Build instance to configure
 /// * `target` - The target triple string
 fn configure_compiler_flags(build: &mut cc::Build, target: &str) {
+    let is_msvc = target.contains("msvc");
     // Architecture-specific optimizations
-    if target.contains("x86_64") {
-        // Use x86-64-v3 for better performance on modern CPUs
-        build.flag_if_supported("-march=x86-64-v3");
-        build.flag_if_supported("-ffast-math");
-    } else if target.contains("aarch64") {
-        // ARM-specific optimizations
-        build.flag_if_supported("-O3");
-    } else if target.contains("wasm32") {
-        // WebAssembly-specific flags
-        build.flag_if_supported("-O3");
-        build.flag_if_supported("-flto");
-    }
-
-    // Link-time optimization for better performance
-    if cfg!(target_os = "windows") {
-        build.flag_if_supported("/GL"); // Whole program optimization on MSVC
+    if is_msvc {
+        // MSVC (Windows)
+        build.flag_if_supported("/O2");      // Maximum speed optimization
+        build.flag_if_supported("/Oi");      // Enable intrinsic functions (essential for fast math)
+        build.flag_if_supported("/Ot");      // Favor fast code over small code
+        build.flag_if_supported("/EHs-c-");  // Disable C++ exceptions (eliminates unwinding overhead)
+        build.flag_if_supported("/GR-");     // Disable RTTI (Run-Time Type Information)
+        build.flag_if_supported("/fp:fast"); // Fast floating-point model
+        build.flag_if_supported("/arch:AVX2"); // Enable AVX2 vectorization on 64-bit MSVC
     } else {
-        build.flag_if_supported("-flto"); // Link-time optimization on GCC/Clang
+        // GCC / Clang (Linux & Cross-compiling)
+        build.flag_if_supported("-O3");                  // Max speed optimization
+        build.flag_if_supported("-ffast-math");          // Fast floating-point math loops
+        build.flag_if_supported("-fno-exceptions");      // Disable exception handling overhead
+        build.flag_if_supported("-fno-rtti");            // Disable RTTI
+        build.flag_if_supported("-fomit-frame-pointer"); // Free up frame pointer register for loops
+
+        // Target architecture vectorization
+        if target.contains("x86_64") {
+            // Broad x86-64 support with SSE4.1/AVX2 acceleration
+            build.flag_if_supported("-msse4.1");
+            build.flag_if_supported("-mavx2");
+            build.flag_if_supported("-mfma");
+        } else if target.contains("aarch64") {
+            // ARM64 NEON SIMD acceleration
+            build.flag_if_supported("-ftree-vectorize");
+        } else if target.contains("wasm32") {
+            build.flag_if_supported("-flto");
+            build.flag_if_supported("-msimd128");
+        }
+
+        // Link-Time Optimization (LTO) for GCC/Clang
+        build.flag_if_supported("-flto");
     }
 }
 

@@ -35,7 +35,9 @@ import java.util.Map;
  * documentation, so nothing here may touch GL or assume render-thread
  * context -- confirmed safe as written (registry lookups only).
  */
-@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT)
+// Compatibility for 1.21
+@SuppressWarnings("removal")
+@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class TesseraModelBakingHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/ModelBakingHandler");

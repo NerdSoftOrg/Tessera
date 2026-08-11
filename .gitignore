@@ -17,6 +17,8 @@ versions/
 native/bridge/target/
 native/bridge/Cargo.lock
 
+native/bridge/pgo_data/
+
 src/main/resources/natives/*.dll
 src/main/resources/natives/*.so
 src/main/resources/natives/*.dylib

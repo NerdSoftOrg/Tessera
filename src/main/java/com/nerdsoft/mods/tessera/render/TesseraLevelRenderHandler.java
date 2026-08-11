@@ -61,7 +61,9 @@ import org.slf4j.LoggerFactory;
  * changes (i.e. the section recompiled), not every frame regardless of
  * whether anything changed.</p>
  */
-@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT)
+// Compatibility for 1.21
+@SuppressWarnings("removal")
+@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class TesseraLevelRenderHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/LevelRenderHandler");

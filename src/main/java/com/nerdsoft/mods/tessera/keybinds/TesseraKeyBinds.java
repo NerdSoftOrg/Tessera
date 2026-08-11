@@ -13,7 +13,9 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.InputEvent;
 import org.lwjgl.glfw.GLFW;
 
-@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT)
+// Compatibility for 1.21
+@SuppressWarnings("removal")
+@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class TesseraKeyBinds {
 
     @SubscribeEvent

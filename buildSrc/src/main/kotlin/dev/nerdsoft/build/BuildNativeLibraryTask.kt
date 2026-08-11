@@ -57,11 +57,38 @@ abstract class BuildNativeLibraryTask @Inject constructor(
     @get:Optional
     abstract val useZigbuild: Property<Boolean>
 
+    /**
+     * When true, automatically cross-compiles all supported targets (Windows x86_64,
+     * Linux x86_64, Linux aarch64) in a single run. Cross-compilation for foreign
+     * platforms automatically leverages `cargo zigbuild`.
+     */
+    @get:Input
+    @get:Optional
+    abstract val buildAllTargets: Property<Boolean>
+
     @TaskAction
     fun build() {
         val bridgeDir = bridgeProjectDir.get().asFile
-        val triple = targetTriple.orNull?.takeIf { it.isNotBlank() }
+        val singleTriple = targetTriple.orNull?.takeIf { it.isNotBlank() }
 
+        if (buildAllTargets.getOrElse(false)) {
+            val supportedTargets = listOf(
+                "x86_64-pc-windows-msvc",
+                "x86_64-unknown-linux-gnu",
+                "aarch64-unknown-linux-gnu"
+            )
+
+            supportedTargets.forEach { triple ->
+                val isCross = isCrossCompile(triple)
+                buildForTarget(bridgeDir, triple, useZig = isCross)
+            }
+        } else {
+            val useZig = useZigbuild.getOrElse(false)
+            buildForTarget(bridgeDir, singleTriple, useZig)
+        }
+    }
+
+    private fun buildForTarget(bridgeDir: File, triple: String?, useZig: Boolean) {
         if (triple != null && isAppleDarwin(triple)) {
             throw IllegalArgumentException(
                 "Refusing to build the native bridge for '$triple': macOS is not supported. " +
@@ -78,8 +105,6 @@ abstract class BuildNativeLibraryTask @Inject constructor(
                         "See the class-level doc comment on BuildNativeLibraryTask for details."
             )
         }
-
-        val useZig = useZigbuild.getOrElse(false)
 
         val cargoArgs = buildList {
             add("cargo")
@@ -107,13 +132,31 @@ abstract class BuildNativeLibraryTask @Inject constructor(
                 environment("TESSERA_BC7ENC_RDO_COMMIT", commit)
             }
 
-            // target-cpu=native is only meaningful (and safe) when building
-            // for the host's own CPU; skip it for cross builds where the
-            // build machine's CPU features don't necessarily match the
-            // target's.
-            if (triple == null) {
-                environment("RUSTFLAGS", "-C target-cpu=native")
+            // Instruct cc-rs to use Zig as the C/C++ cross-compiler when building for Linux targets from Windows
+            if (useZig && triple != null && triple.contains("linux")) {
+                val zigTarget = if (triple.startsWith("aarch64")) "aarch64-linux-gnu" else "x86_64-linux-gnu"
+                environment("CC", "zig cc -target $zigTarget")
+                environment("CXX", "zig c++ -target $zigTarget")
+                environment("AR", "zig ar")
             }
+
+            val currentOs = triple?.let(::osFromTriple) ?: hostOs()
+            val baseFlags = mutableListOf<String>()
+
+            if (triple == null || !isCrossCompile(triple)) {
+                baseFlags.add("-C target-cpu=native")
+            }
+
+            if (currentOs == "windows") {
+                baseFlags.add("-C link-arg=/OPT:REF")
+                baseFlags.add("-C link-arg=/OPT:ICF")
+                baseFlags.add("-C link-arg=/DEBUG:NONE")
+            } else {
+                baseFlags.add("-C link-arg=-Wl,--gc-sections")
+                baseFlags.add("-C link-arg=-s")
+            }
+
+            environment("RUSTFLAGS", baseFlags.joinToString(" "))
         }
 
         val platformDir = triple?.let(::platformDirFromTriple) ?: platformDirFromHost()
@@ -124,7 +167,7 @@ abstract class BuildNativeLibraryTask @Inject constructor(
                 "Native bridge build did not produce $libraryFileName under ${bridgeDir.resolve("target")}"
             )
 
-        val destinationDir = outputDir.get().dir("natives/$platformDir").asFile
+        val destinationDir = outputDir.get().dir("assets/tessera/natives/$platformDir").asFile
         destinationDir.mkdirs()
         builtLibrary.copyTo(destinationDir.resolve(libraryFileName), overwrite = true)
     }
@@ -140,6 +183,12 @@ abstract class BuildNativeLibraryTask @Inject constructor(
     }
 
     private fun isAppleDarwin(triple: String): Boolean = triple.contains("apple-darwin")
+
+    private fun isCrossCompile(triple: String): Boolean {
+        val hostOsName = hostOs()
+        val targetOsName = osFromTriple(triple)
+        return hostOsName != targetOsName || (hostOsName == "linux" && triple.startsWith("aarch64"))
+    }
 
     private fun libraryFileName(os: String): String = when (os) {
         "windows" -> "tessera_bridge.dll"

@@ -17,7 +17,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT)
+// Compatibility for 1.21
+@SuppressWarnings("removal")
+@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class TesseraDebugOverlay {
 
     private static final int GL_GPU_MEM_INFO_TOTAL_AVAILABLE_NVX = 0x9048;

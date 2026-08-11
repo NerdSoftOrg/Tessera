@@ -95,19 +95,77 @@ if (project.hasProperty("release")) {
     }
 }
 
+val explicitTarget = providers.gradleProperty("tessera.native.target").orElse("").get()
+
+val targetClassifier = if (explicitTarget.isNotBlank()) {
+    when {
+        explicitTarget.contains("pc-windows") -> "windows-x86_64"
+        explicitTarget.contains("linux") && explicitTarget.startsWith("aarch64") -> "linux-aarch64"
+        explicitTarget.contains("linux") -> "linux-x86_64"
+        else -> explicitTarget.replace("-", "_")
+    }
+} else {
+    val isFatBuild = providers.gradleProperty("tessera.fatJar")
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
+
+    if (isFatBuild) {
+        ""
+    } else {
+        val os = if (System.getProperty("os.name").lowercase().contains("win")) "windows" else "linux"
+        val arch = if (System.getProperty("os.arch").lowercase().let { it.contains("aarch64") || it.contains("arm64") }) "aarch64" else "x86_64"
+        "$os-$arch"
+    }
+}
+
 tasks {
     val skipNativeBuild = providers.gradleProperty("tessera.skipNativeBuild")
+        .map { it.toBoolean() }
+        .orElse(false)
 
-    val buildNativeLibrary = register<BuildNativeLibraryTask>("buildNativeLibrary") {
+    val targetsToBuild = if (explicitTarget.isNotBlank()) {
+        listOf(explicitTarget)
+    } else {
+        listOf(
+            "x86_64-pc-windows-msvc",
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu"
+        )
+    }
+
+    val nativeBuildTasks = targetsToBuild.map { target ->
+        val sanitizedName = target.replace("-", "_").replace(".", "_")
+        register<BuildNativeLibraryTask>("buildNativeLibrary_${sanitizedName}") {
+            group = "tessera"
+            description = "Builds the compression bridge for target $target"
+
+            rustToolchain.set(sc.properties["deps_rust_toolchain"] as String)
+            bridgeProjectDir.set(rootProject.layout.projectDirectory.dir("native/bridge"))
+            outputDir.set(layout.buildDirectory.dir("generated/natives"))
+            targetTriple.set(target)
+
+            val isHostWindows = System.getProperty("os.name").lowercase().contains("win")
+            val isLinuxTarget = target.contains("linux")
+            val defaultUseZig = isHostWindows && isLinuxTarget
+
+            val useZigOption = providers.gradleProperty("tessera.useZigbuild")
+                .map { it.toBoolean() }
+                .orElse(defaultUseZig)
+                .get()
+
+            useZigbuild.set(useZigOption)
+
+            bc7encRdoCommit.set(sc.properties["deps_bc7enc_rdo_commit"] as String)
+
+            onlyIf { !skipNativeBuild.get() }
+        }
+    }
+
+    val buildNativeLibrary = register("buildNativeLibrary") {
         group = "tessera"
-        description =
-            "Builds the Rust/C++ compression bridge for the host platform and stages it under generated/natives"
-        rustToolchain.set(sc.properties["deps_rust_toolchain"] as String)
-        bridgeProjectDir.set(rootProject.layout.projectDirectory.dir("native/bridge"))
-        outputDir.set(layout.buildDirectory.dir("generated/natives"))
-        targetTriple.set(providers.gradleProperty("tessera.native.target").orElse(""))
-        bc7encRdoCommit.set(sc.properties["deps_bc7enc_rdo_commit"] as String)
-        onlyIf { !skipNativeBuild.isPresent }
+        description = "Builds native libraries for all configured targets"
+        dependsOn(nativeBuildTasks)
     }
 
     processResources {
@@ -142,6 +200,23 @@ tasks {
         doLast {
             JsonMinifier.minifyInPlace(destinationDir, setOf(".json", ".mcmeta"))
         }
+    }
+
+    withType<Jar>().configureEach {
+        archiveClassifier.set(targetClassifier)
+
+        entryCompression = ZipEntryCompression.DEFLATED
+        dependsOn(processResources)
+
+        exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+        exclude("META-INF/maven/**")
+        exclude("**/*.kotlin_module")
+
+        exclude("META-INF/LICENSE*", "META-INF/NOTICE*")
+        exclude("META-INF/DEPENDENCIES")
+        exclude("META-INF/INDEX.LIST")
+
+        exclude("**/*.kotlin_builtins")
     }
 
     named("createMinecraftArtifacts") {

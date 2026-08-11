@@ -14,14 +14,22 @@ object JsonMinifier {
 
         root.walkTopDown()
             .filter { it.isFile && extensions.any { ext -> it.name.endsWith(ext) } }
+            .toList()
+            .parallelStream()
             .forEach { minifyFile(it) }
     }
 
     private fun minifyFile(file: File) {
-        val parsed: JsonElement = runCatching {
-            file.reader(Charsets.UTF_8).use { gson.fromJson(it, JsonElement::class.java) }
-        }.getOrNull() ?: return
+        runCatching {
+            val parsed: JsonElement = file.bufferedReader(Charsets.UTF_8).use {
+                gson.fromJson(it, JsonElement::class.java)
+            }
 
-        file.writer(Charsets.UTF_8).use { gson.toJson(parsed, it) }
+            file.bufferedWriter(Charsets.UTF_8).use {
+                gson.toJson(parsed, it)
+            }
+        }.onFailure {
+            System.err.println("[Tessera Build] Failed minifying JSON: ${file.absolutePath} -> ${it.message}")
+        }
     }
 }

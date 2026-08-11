@@ -34,6 +34,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Prepare vendor directory workspace
+        run: mkdir -p native/vendor
+
       - name: Verify MSVC toolchain is discoverable
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -45,11 +48,17 @@ jobs:
           }
           & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 
+      - name: Install Linux build essentials
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config git
+
       - name: Install aarch64 cross toolchain
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
 
       - name: Set aarch64 linker env
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -58,12 +67,22 @@ jobs:
           echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
           echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> "$GITHUB_ENV"
 
+      - name: Set RUSTFLAGS for size and link optimization
+        shell: bash
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            echo "RUSTFLAGS=-C link-arg=/OPT:REF -C link-arg=/OPT:ICF -C link-arg=/DEBUG:NONE" >> "$GITHUB_ENV"
+          else
+            echo "RUSTFLAGS=-C link-arg=-Wl,--gc-sections -C link-arg=-s" >> "$GITHUB_ENV"
+          fi
+
       - name: Cache cargo registry and target dir
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
             native/bridge/target
           key: cargo-${{ matrix.platform_dir }}-${{ hashFiles('native/bridge/Cargo.lock') }}
           restore-keys: |
@@ -71,20 +90,34 @@ jobs:
 
       - name: cargo build --release
         working-directory: native/bridge
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          echo "==== contents of target/${{ matrix.target }}/release ===="
+          ls -la target/${{ matrix.target }}/release || true
 
       - name: Stage native library
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p "staged-natives/natives/${{ matrix.platform_dir }}"
+          BUILD_DIR="native/bridge/target/${{ matrix.target }}/release"
+          echo "Looking for native library in $BUILD_DIR"
+          ls -la "$BUILD_DIR" || true
+
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            LIB_NAME="tessera_bridge.dll"
+            LIB=$(find "$BUILD_DIR" -maxdepth 1 -type f -iname "tessera_bridge.dll" -o -iname "*.dll" | head -n1 || true)
           else
-            LIB_NAME="libtessera_bridge.so"
+            LIB=$(find "$BUILD_DIR" -maxdepth 1 -type f \( -iname "libtessera_bridge.*" -o -iname "*.so" -o -iname "*.dylib" \) | head -n1 || true)
           fi
-          
-          SRC="native/bridge/target/${{ matrix.target }}/release/$LIB_NAME"
-          cp "$SRC" "staged-natives/natives/${{ matrix.platform_dir }}/$LIB_NAME"
+
+          if [ -z "$LIB" ]; then
+            echo "::error::Could not find built native library in $BUILD_DIR"
+            ls -la "$BUILD_DIR"
+            exit 1
+          fi
+
+          echo "Found native library: $LIB"
+          cp "$LIB" "staged-natives/natives/${{ matrix.platform_dir }}/$(basename "$LIB")"
 
       - name: Upload native artifact
         uses: actions/upload-artifact@v4
@@ -112,20 +145,21 @@ jobs:
           pattern: native-*
           path: downloaded-natives
 
-      - name: Merge natives into generated/natives layout
+      - name: Merge natives into project resources
         run: |
-          mkdir -p build/generated/natives/natives
+          mkdir -p src/main/resources/assets/tessera/natives
           for dir in downloaded-natives/native-*; do
             platform_dir=$(basename "$dir" | sed 's/^native-//')
-            mkdir -p "build/generated/natives/natives/$platform_dir"
-            cp "$dir"/* "build/generated/natives/natives/$platform_dir/"
+            mkdir -p "src/main/resources/assets/tessera/natives/$platform_dir"
+            cp "$dir"/* "src/main/resources/assets/tessera/natives/$platform_dir/"
           done
-          find build/generated/natives -type f
+          echo "Merged files:"
+          find src/main/resources/assets/tessera/natives -type f
 
-      - name: Build JAR (skip native rebuild, use staged natives)
+      - name: Build JAR
         run: |
           chmod +x ./gradlew
-          ./gradlew buildAndCollect -Ptessera.skipNativeBuild=true --stacktrace
+          ./gradlew buildAndCollect -Ptessera.skipNativeBuild=true -Ptessera.fatJar=true --stacktrace
 
       - name: Verify JAR contains all natives
         run: |
@@ -137,7 +171,7 @@ jobs:
             exit 1
           fi
           echo "Inspecting $JAR_PATH"
-          unzip -l "$JAR_PATH" | grep natives
+          unzip -l "$JAR_PATH" | grep natives || true
           for plat in linux-x86_64 linux-aarch64 windows-x86_64; do
             if ! unzip -l "$JAR_PATH" | grep -q "natives/$plat/"; then
               echo "::error::Missing natives for $plat in $JAR_PATH"
