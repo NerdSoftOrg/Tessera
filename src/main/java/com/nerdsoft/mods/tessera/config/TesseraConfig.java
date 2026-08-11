@@ -8,6 +8,7 @@ public final class TesseraConfig {
 
     public static final ModConfigSpec.IntValue COMPRESSION_QUALITY;
     public static final ModConfigSpec.IntValue DEDUP_SIMILARITY_THRESHOLD;
+    public static final ModConfigSpec.BooleanValue DEDUP_SKIP_DUPLICATE_ENCODING;
     public static final ModConfigSpec.IntValue VRAM_BUDGET_TARGET_MB;
     public static final ModConfigSpec.IntValue MAX_QUALITY_STEP_DOWN_ATTEMPTS;
     public static final ModConfigSpec.ConfigValue<String> CACHE_DIRECTORY;
@@ -47,6 +48,17 @@ public final class TesseraConfig {
                         "to be treated as duplicates. Lower is stricter."
                 )
                 .defineInRange("dedupSimilarityThreshold", 6, 0, 64);
+
+        DEDUP_SKIP_DUPLICATE_ENCODING = builder
+                .comment(
+                        "EXPERIMENTAL — Section 4/14 step 9. When enabled, near-duplicate sprites (per the",
+                        "threshold above) are excluded from the Stitcher's bin-packing entirely and aliased",
+                        "to their representative's atlas region instead, actually reducing resident VRAM",
+                        "(not just re-encode CPU cost). Defaults to false (opt-in) since this changes which",
+                        "sprites occupy their own atlas region, which is a more invasive change than any",
+                        "other config in this mod — worth testing on a specific modpack before relying on it."
+                )
+                .define("dedupSkipDuplicateEncoding", false);
 
         builder.pop();
 

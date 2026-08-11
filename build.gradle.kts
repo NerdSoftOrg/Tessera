@@ -1,16 +1,17 @@
-@file:Suppress("RedundantSuppression")
+@file:Suppress("AvoidApplyPluginMethod")
 
-import dev.nerdsoft.build.JsonMinifier
 import dev.nerdsoft.build.BuildNativeLibraryTask
+import dev.nerdsoft.build.JsonMinifier
 
 plugins {
     id("net.neoforged.moddev")
     id("neoforge-mutex")
+    id("idea")
 }
 
-val modId = property("mod.id") as String
+val modId = property("mod_id") as String
 
-version = "${property("mod.version")}+${sc.current.version}"
+version = "${property("mod_version")}+${sc.current.version}"
 base.archivesName = modId
 
 val requiredJava = when {
@@ -32,29 +33,35 @@ allprojects {
 }
 
 neoForge {
-    version = property("neo.version") as String
+    version = sc.properties["neo_version"] as String
 
     parchment {
-        mappingsVersion = property("parchment.mappings.version") as String
-        minecraftVersion = property("parchment.minecraft.version") as String
+        mappingsVersion = sc.properties["parchment_mappings_version"] as String
+        minecraftVersion = sc.properties["parchment_minecraft_version"] as String
     }
 
     mods {
         register(modId) {
-            sourceSet(sourceSets.main.get())
+            sourceSet(sourceSets.named("main").get())
         }
     }
 
     runs {
+        all {
+            val runDir = rootProject.file("versions/${sc.current.version}/run")
+            if (!runDir.exists()) runDir.mkdirs()
+            gameDirectory = runDir
+        }
+
         register("client") {
-            gameDirectory = file("../../run/")
-            client()
+            this.client()
+            sourceSet = sourceSets.named("main").get()
             systemProperty("neoforge.enabledGameTestNamespaces", modId)
         }
 
         register("data") {
-            gameDirectory = file("../../run/")
-            data()
+            this.data()
+            sourceSet = sourceSets.named("main").get()
             programArguments.addAll(
                 "--mod", modId,
                 "--all",
@@ -65,8 +72,7 @@ neoForge {
     }
 }
 
-// FIX CRÍTICO: Incluir tanto los recursos generados por DataGen como las DLLs de Rust
-sourceSets.main {
+sourceSets.named("main") {
     resources {
         srcDir("src/generated/resources")
         srcDir(layout.buildDirectory.dir("generated/natives"))
@@ -94,17 +100,19 @@ tasks {
 
     val buildNativeLibrary = register<BuildNativeLibraryTask>("buildNativeLibrary") {
         group = "tessera"
-        description = "Builds the Rust/C++ compression bridge for the host platform and stages it under generated/natives"
-        rustToolchain.set(providers.gradleProperty("deps.rust.toolchain"))
+        description =
+            "Builds the Rust/C++ compression bridge for the host platform and stages it under generated/natives"
+        rustToolchain.set(sc.properties["deps_rust_toolchain"] as String)
         bridgeProjectDir.set(rootProject.layout.projectDirectory.dir("native/bridge"))
         outputDir.set(layout.buildDirectory.dir("generated/natives"))
         targetTriple.set(providers.gradleProperty("tessera.native.target").orElse(""))
+        bc7encRdoCommit.set(sc.properties["deps_bc7enc_rdo_commit"] as String)
         onlyIf { !skipNativeBuild.isPresent }
     }
 
     processResources {
-        fun MutableMap<String, String>.register(key: String, property: String) {
-            val value: String = sc.properties[property]
+        fun MutableMap<String, String>.register(key: String, prop: String) {
+            val value: String = sc.properties[prop] as String
             inputs.property(key, value)
             put(key, value)
         }
@@ -114,15 +122,16 @@ tasks {
         dependsOn(buildNativeLibrary)
 
         val props = buildMap {
-            register("loader_version_range", "loader.version.range")
-            register("mod_license", "mod.license")
-            register("mod_id", "mod.id")
-            register("mod_version", "mod.version")
-            register("mod_name", "mod.name")
-            register("mod_authors", "mod.authors")
-            register("mod_description", "mod.description")
-            register("neo_version_range", "neo.version.range")
-            register("minecraft_version_range", "minecraft.version.range")
+            register("loader_version_range", "loader_version_range")
+            register("mod_license", "mod_license")
+            register("mod_id", "mod_id")
+            register("mod_version", "mod_version")
+            register("mod_name", "mod_name")
+            register("mod_authors", "mod_authors")
+            register("mod_description", "mod_description")
+            register("mod_issues", "mod_issues")
+            register("neo_version_range", "neo_version_range")
+            register("minecraft_version_range", "minecraft_version_range")
         }
 
         filesMatching("META-INF/neoforge.mods.toml") { expand(props) }
@@ -145,7 +154,7 @@ tasks {
 
         dependsOn("jar")
         from(project.tasks.named("jar"))
-        inputs.property("version", project.property("mod.version"))
-        into(rootProject.layout.buildDirectory.file("libs/${project.property("mod.version")}"))
+        inputs.property("version", project.property("mod_version"))
+        into(rootProject.layout.buildDirectory.file("libs/${project.property("mod_version")}"))
     }
 }

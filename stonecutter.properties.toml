@@ -1,0 +1,23 @@
+mod_id = "tessera"
+mod_name = "Tessera"
+mod_group = "com.nerdsoft.mods"
+mod_version = "0.2.0"
+mod_license = "CC-BY-NC-SA-4.0"
+mod_authors = "Bichal"
+mod_description = "A GPU-first VRAM optimization engine that classifies texture atlas sprites by content and recompresses them to BC1/BC7 (with uncompressed RGBA8 for animated sprites) for low-end and integrated-GPU hardware."
+mod_side = "CLIENT"
+mod_issues = "https://github.com/NerdSoftOrg/Tessera/issues"
+
+deps_rust_toolchain = "stable"
+deps_bc7enc_rdo_commit = "b9438627eef73a1157e84201b6fa6eb2ffd6d9f0"
+
+["1.21.1"]
+minecraft_version = "1.21.1"
+minecraft_version_range = "[1.21.1,1.21.2)"
+
+neo_version = "21.1.248"
+neo_version_range = "[21.0,21.2)"
+loader_version_range = "[1,)"
+
+parchment_minecraft_version = "1.21.1"
+parchment_mappings_version = "2024.11.17"

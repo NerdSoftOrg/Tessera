@@ -3,15 +3,11 @@ package dev.nerdsoft.build
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
-import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.*
 import org.gradle.api.tasks.Optional
-import org.gradle.api.tasks.OutputDirectory
-import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.Locale
+import java.util.*
 import javax.inject.Inject
 
 abstract class BuildNativeLibraryTask @Inject constructor(
@@ -31,6 +27,10 @@ abstract class BuildNativeLibraryTask @Inject constructor(
     @get:Input
     @get:Optional
     abstract val targetTriple: Property<String>
+
+    @get:Input
+    @get:Optional
+    abstract val bc7encRdoCommit: Property<String>
 
     @TaskAction
     fun build() {
@@ -54,6 +54,12 @@ abstract class BuildNativeLibraryTask @Inject constructor(
         execOperations.exec {
             workingDir = bridgeDir
             commandLine = cargoArgs
+            val commit = bc7encRdoCommit.orNull?.trim()
+            if (!commit.isNullOrEmpty()) {
+                environment("TESSERA_BC7ENC_RDO_COMMIT", commit)
+            }
+
+            environment("RUSTFLAGS", "-C target-cpu=native")
         }
 
         val platformDir = triple?.let(::platformDirFromTriple) ?: platformDirFromHost()

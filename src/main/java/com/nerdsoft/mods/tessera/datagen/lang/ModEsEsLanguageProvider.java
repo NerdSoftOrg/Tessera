@@ -47,7 +47,7 @@ public class ModEsEsLanguageProvider extends ModLanguageProvider {
         addConfigOption("cacheDirectory", "Directorio de Caché",
                 "Nombre de la carpeta donde se almacenan en disco los bloques comprimidos en BC7.");
 
-        // Debug Overlay
-        add("tessera.overlay.vram_saved", "VRAM Ahorrada por Tessera: %s MB (BC7 Activo)");
+        // Overlay debug
+        add("tessera.overlay.vram_saved", "VRAM Ahorrada: %s MB (BC7 Activo)");
     }
 }

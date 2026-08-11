@@ -1,7 +1,7 @@
 modLoader = "javafml"
 loaderVersion = "${loader_version_range}"
 license = "${mod_license}"
-issueTrackerURL = "https://github.com/NerdSoftOrg/Tessera/issues"
+issueTrackerURL = "${mod_issues}"
 
 [[mods]]
 modId = "${mod_id}"
@@ -13,16 +13,16 @@ description = '''${mod_description}'''
 [[mixins]]
 config = "tessera.mixins.json"
 
-[[dependencies.${mod_id}]]
-    modId = "neoforge"
-    type = "required"
-    versionRange = "${neo_version_range}"
-    ordering = "NONE"
-    side = "BOTH"
+[[dependencies."${mod_id}"]]
+modId = "neoforge"
+type = "required"
+versionRange = "${neo_version_range}"
+ordering = "NONE"
+side = "CLIENT"
 
-[[dependencies.${mod_id}]]
-    modId = "minecraft"
-    type = "required"
-    versionRange = "${minecraft_version_range}"
-    ordering = "NONE"
-    side = "BOTH"
+[[dependencies."${mod_id}"]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "CLIENT"

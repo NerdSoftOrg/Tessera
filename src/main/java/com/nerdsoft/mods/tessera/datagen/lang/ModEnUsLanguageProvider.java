@@ -14,12 +14,12 @@ public class ModEnUsLanguageProvider extends ModLanguageProvider {
         add("modmenu.name.tessera", "Tessera");
         add("modmenu.description.tessera", "Native BC7 GPU texture compression and VRAM optimization engine.");
 
-        // Títulos de pantalla de configuración requeridos por NeoForge
+        // Config screen titles required by NeoForge
         add("tessera.configuration.title", "Tessera Settings");
         add("tessera.configuration.section.tessera.client.toml", "Tessera Client Config");
         add("tessera.configuration.section.tessera.client.toml.title", "Tessera Client Configuration");
 
-        // Categorías (Título, Tooltip y Botones de submenú)
+        // Categories (Title, Tooltip and Submenu buttons)
         addConfigCategory("compression", "Compression", "Configure BC7 native compression behavior and animation freezing.", "Compression Settings");
         addConfigCategory("deduplication", "Deduplication", "Configure perceptual hashing and near-duplicate sprite merging.", "Deduplication Settings");
         addConfigCategory("vramBudget", "VRAM Budget", "Configure advisory VRAM limits and quality step-down logic.", "VRAM Budget Settings");
@@ -48,6 +48,6 @@ public class ModEnUsLanguageProvider extends ModLanguageProvider {
                 "Folder name where compiled BC7 texture blocks are stored on disk.");
 
         // Debug Overlay
-        add("tessera.overlay.vram_saved", "Tessera VRAM Saved: %s MB (BC7 Active)");
+        add("tessera.overlay.vram_saved", "VRAM Saved: %s MB (BC7 Active)");
     }
 }

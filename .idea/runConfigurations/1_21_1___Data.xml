@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="1.21.1 - Data" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="net.neoforged.devlaunch.Main" />
+    <module name="Tessera.1_21_1.main" />
+    <option name="PROGRAM_PARAMETERS" value="@C:\\Users\\vtorr\\IdeaProjects\\Tessera\\versions\\1.21.1\\build\\moddev\\dataRunProgramArgs.txt" />
+    <option name="VM_PARAMETERS" value="@C:\\Users\\vtorr\\IdeaProjects\\Tessera\\versions\\1.21.1\\build\\moddev\\dataRunVmArgs.txt -Dfml.modFolders=tessera%%C:\\Users\\vtorr\\IdeaProjects\\Tessera\\versions\\1.21.1\\build\\classes\\java\\main;tessera%%C:\\Users\\vtorr\\IdeaProjects\\Tessera\\versions\\1.21.1\\build\\resources\\main" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/versions/1.21.1/run" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

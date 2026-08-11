@@ -2,7 +2,9 @@ package com.nerdsoft.mods.tessera.vram;
 
 import com.nerdsoft.mods.tessera.config.TesseraConfig;
 import com.nerdsoft.mods.tessera.config.TesseraRulesManager;
+import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GLCapabilities;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -12,6 +14,8 @@ public final class VramBudgetEngine {
 
     private static final int GL_NVX_GPU_MEMORY_INFO_DEDICATED_VIDMEM = 0x9047;
     private static final int GL_ATI_MEMINFO_VBO_FREE_MEMORY = 0x87FC;
+
+    private static volatile Integer cachedHardwareVramMb;
 
     private VramBudgetEngine() {
     }
@@ -30,20 +34,56 @@ public final class VramBudgetEngine {
     }
 
     private static int queryHardwareVramMb() {
-        try {
-            int[] query = new int[4];
-            GL11.glGetIntegerv(GL_NVX_GPU_MEMORY_INFO_DEDICATED_VIDMEM, query);
-            if (query[0] > 0) {
-                return query[0] / 1024;
-            }
-
-            GL11.glGetIntegerv(GL_ATI_MEMINFO_VBO_FREE_MEMORY, query);
-            if (query[0] > 0) {
-                return query[0] / 1024;
-            }
-        } catch (Exception e) {
-            LOGGER.debug("Failed to query VRAM via OpenGL extensions.", e);
+        Integer cached = cachedHardwareVramMb;
+        if (cached != null) {
+            return cached;
         }
+        return detectAndCacheHardwareVramMb();
+    }
+
+    private static synchronized int detectAndCacheHardwareVramMb() {
+        if (cachedHardwareVramMb != null) {
+            return cachedHardwareVramMb;
+        }
+
+        int result = queryHardwareVramMbUncached();
+        cachedHardwareVramMb = result;
+        return result;
+    }
+
+    private static int queryHardwareVramMbUncached() {
+        GLCapabilities caps;
+        try {
+            caps = GL.getCapabilities();
+        } catch (Throwable t) {
+            LOGGER.debug("Failed to read OpenGL capabilities for VRAM query.", t);
+            return -1;
+        }
+
+        if (caps.GL_NVX_gpu_memory_info) {
+            try {
+                int[] query = new int[4];
+                GL11.glGetIntegerv(GL_NVX_GPU_MEMORY_INFO_DEDICATED_VIDMEM, query);
+                if (query[0] > 0) {
+                    return query[0] / 1024;
+                }
+            } catch (Exception e) {
+                LOGGER.debug("Failed to query VRAM via GL_NVX_gpu_memory_info.", e);
+            }
+        }
+
+        if (caps.GL_ATI_meminfo) {
+            try {
+                int[] query = new int[4];
+                GL11.glGetIntegerv(GL_ATI_MEMINFO_VBO_FREE_MEMORY, query);
+                if (query[0] > 0) {
+                    return query[0] / 1024;
+                }
+            } catch (Exception e) {
+                LOGGER.debug("Failed to query VRAM via GL_ATI_meminfo.", e);
+            }
+        }
+
         return -1;
     }
 

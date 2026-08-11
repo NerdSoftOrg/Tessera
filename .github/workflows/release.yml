@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-native:
+    name: Build native bridge (${{ matrix.platform_dir }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform_dir: linux-x86_64
+            target: ""
+          - os: ubuntu-latest
+            platform_dir: linux-aarch64
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
+            platform_dir: windows-x86_64
+            target: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # cc-rs (native build-dependency) auto-discovers MSVC via the
+      # SetupConfiguration COM API on windows-latest without needing
+      # vcvarsall.bat, as long as the target is the standard
+      # x86_64-pc-windows-msvc triple used here. If windows-latest's
+      # image migration ever changes that (e.g. only pre-release VS
+      # available, or an ARM64 runner), switch to ilammy/msvc-dev-cmd
+      # before this step.
+      - name: Verify MSVC toolchain is discoverable
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            Write-Error "vswhere.exe not found; MSVC build tools may be missing on this runner image. See workflow comment above this step."
+            exit 1
+          }
+          & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+
+      - name: Install aarch64 cross toolchain
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Set aarch64 linker env
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+          echo "CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++" >> "$GITHUB_ENV"
+
+      - name: Cache cargo registry and target dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/bridge/target
+          key: cargo-${{ matrix.platform_dir }}-${{ hashFiles('native/bridge/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.platform_dir }}-
+
+      - name: cargo build --release
+        working-directory: native/bridge
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release --target ${{ matrix.target }}
+          else
+            cargo build --release
+          fi
+
+      - name: Stage native library
+        shell: bash
+        run: |
+          mkdir -p "staged-natives/natives/${{ matrix.platform_dir }}"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            LIB_NAME="tessera_bridge.dll"
+          else
+            LIB_NAME="libtessera_bridge.so"
+          fi
+          if [ -n "${{ matrix.target }}" ]; then
+            SRC="native/bridge/target/${{ matrix.target }}/release/$LIB_NAME"
+          else
+            SRC="native/bridge/target/release/$LIB_NAME"
+          fi
+          cp "$SRC" "staged-natives/natives/${{ matrix.platform_dir }}/$LIB_NAME"
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform_dir }}
+          path: staged-natives/natives/${{ matrix.platform_dir }}/*
+          if-no-files-found: error
+
+  package-jar:
+    name: Package JAR with merged natives
+    needs: build-native
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Download all native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: downloaded-natives
+
+      - name: Merge natives into generated/natives layout
+        run: |
+          mkdir -p build/generated/natives/natives
+          for dir in downloaded-natives/native-*; do
+            platform_dir=$(basename "$dir" | sed 's/^native-//')
+            mkdir -p "build/generated/natives/natives/$platform_dir"
+            cp "$dir"/* "build/generated/natives/natives/$platform_dir/"
+          done
+          find build/generated/natives -type f
+
+      - name: Build JAR (skip native rebuild, use staged natives)
+        run: |
+          chmod +x ./gradlew
+          ./gradlew buildAndCollect -Ptessera.skipNativeBuild=true --stacktrace
+
+      - name: Verify JAR contains all natives
+        run: |
+          # buildAndCollect (build.gradle.kts) copies the jar task's output
+          # into build/libs/<mod.version>/, e.g. build/libs/0.1.0/. Exclude
+          # -sources.jar / -dev.jar variants some tasks may also emit there.
+          JAR_PATH=$(find build/libs -mindepth 2 -maxdepth 2 -name "*.jar" \
+            ! -name "*-sources.jar" ! -name "*-dev.jar" | sort | head -n1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::No candidate mod JAR found under build/libs/<version>/"
+            find build/libs -type f
+            exit 1
+          fi
+          echo "Inspecting $JAR_PATH"
+          unzip -l "$JAR_PATH" | grep natives
+          for plat in linux-x86_64 linux-aarch64 windows-x86_64; do
+            if ! unzip -l "$JAR_PATH" | grep -q "natives/$plat/"; then
+              echo "::error::Missing natives for $plat in $JAR_PATH"
+              exit 1
+            fi
+          done
+
+      - name: Upload JAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tessera-jar
+          path: build/libs/**/*.jar
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/libs/**/*.jar
+          generate_release_notes: true

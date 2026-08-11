@@ -3,10 +3,17 @@ build/
 !buildSrc/src/main/kotlin/dev/nerdsoft/build/
 run/
 *.iml
-.idea/
 .kotlin/
 generated/
+versions/
+*.config.json
+*.xml
 
+.idea/*
+!.idea/runConfigurations/
+!.idea/runConfigurations/*.xml
+
+# RUST & NATIVE BRIDGE
 native/bridge/target/
 native/bridge/Cargo.lock
 
@@ -14,9 +21,10 @@ src/main/resources/natives/*.dll
 src/main/resources/natives/*.so
 src/main/resources/natives/*.dylib
 
-
-native/vendor/bc7enc_rdo/*.cpp
-native/vendor/bc7enc_rdo/*.h
+# VENDOR (bc7enc_rdo)
+native/vendor/bc7enc_rdo/*
 !native/vendor/bc7enc_rdo/tessera_bridge.cpp
 !native/vendor/bc7enc_rdo/tessera_bridge.h
-native/vendor/bc7enc_rdo/LICENSE
+!native/vendor/bc7enc_rdo/LICENSE
+!native/vendor/bc7enc_rdo/fetch.sh
+!native/vendor/bc7enc_rdo/VENDORING.md
