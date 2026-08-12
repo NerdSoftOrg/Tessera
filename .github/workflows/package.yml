@@ -89,7 +89,15 @@ jobs:
       - name: Clean vendor directory to force re-fetch with patches
         shell: bash
         run: |
-          rm -rf native/vendor/bc7enc_rdo/*.cpp native/vendor/bc7enc_rdo/*.h native/vendor/bc7enc_rdo/LICENSE
+          cd native/vendor/bc7enc_rdo
+          rm -f rdo_bc_encoder.h rdo_bc_encoder.cpp \
+                bc7enc.h bc7enc.cpp \
+                ert.h ert.cpp \
+                rgbcx.h rgbcx.cpp rgbcx_table4.h rgbcx_table4_small.h \
+                utils.h utils.cpp \
+                bc7decomp.h bc7decomp.cpp bc7decomp_ref.cpp \
+                dds_defs.h \
+                LICENSE
 
       - name: Fetch vendored bc7enc_rdo sources with patches
         shell: bash
@@ -99,6 +107,7 @@ jobs:
           ./fetch.sh
 
       - name: cargo build --release
+        shell: bash
         working-directory: native/bridge
         run: |
           cargo build --release --target ${{ matrix.target }}

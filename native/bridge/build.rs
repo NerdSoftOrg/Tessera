@@ -1,14 +1,38 @@
 use std::path::Path;
-use std::process::Command;
 
 // Constants
 
-/// The specific commit hash of bc7enc_rdo to vendor.
-/// Using a fixed commit ensures reproducible builds.
+/// The specific commit hash of bc7enc_rdo that native/vendor/bc7enc_rdo/fetch.sh
+/// vendors. Kept here only for the error message below -- fetch.sh is the
+/// single source of truth for which files get pulled in and how they're
+/// patched (see native/vendor/bc7enc_rdo/fetch.sh).
 const BC7ENC_RDO_COMMIT: &str = "b9438627eef73a1157e84201b6fa6eb2ffd6d9f0";
 
-/// Files to vendor from the bc7enc_rdo repository.
-const BC7ENC_RDO_FILES: &[&str] = &[
+/// Vendored bc7enc_rdo sources compiled as part of the shared vendor library.
+///
+/// NOTE: lodepng is intentionally NOT in this list. fetch.sh patches
+/// utils.cpp to remove its lodepng/miniz dependency (load_png/save_png are
+/// stubbed out -- this build has no PNG file I/O in the compression path),
+/// so lodepng.h/.cpp are never fetched and must never be compiled here. A
+/// previous version of this file re-fetched an *unpatched* copy of the
+/// vendor sources whenever lodepng.cpp was missing, which silently
+/// clobbered fetch.sh's patches (e.g. the ert.h <cstdint> include) and
+/// broke the build. Do not reintroduce that fallback -- if vendor sources
+/// are missing or incomplete, this build script fails loudly instead (see
+/// `check_vendor_sources` below) and tells the developer to run fetch.sh.
+const VENDOR_SOURCE_FILES: &[&str] = &[
+    "bc7enc.cpp",
+    "ert.cpp",
+    "rgbcx.cpp",
+    "utils.cpp",
+    "bc7decomp.cpp",
+    "bc7decomp_ref.cpp",
+    "rdo_bc_encoder.cpp",
+];
+
+/// Every file fetch.sh is expected to have placed in the vendor directory
+/// (both headers and sources), used only to verify the vendor step ran.
+const VENDOR_REQUIRED_FILES: &[&str] = &[
     "rdo_bc_encoder.h",
     "rdo_bc_encoder.cpp",
     "bc7enc.h",
@@ -21,38 +45,11 @@ const BC7ENC_RDO_FILES: &[&str] = &[
     "rgbcx_table4_small.h",
     "utils.h",
     "utils.cpp",
-    "miniz.h",
     "bc7decomp.h",
     "bc7decomp.cpp",
     "bc7decomp_ref.cpp",
     "dds_defs.h",
-    "lodepng.h",
-    "lodepng.cpp",
     "LICENSE",
-];
-
-/// Source files to compile from the vendor directory.
-const SOURCE_FILES: &[&str] = &[
-    "bc7enc.cpp",
-    "ert.cpp",
-    "rgbcx.cpp",
-    "utils.cpp",
-    "bc7decomp.cpp",
-    "bc7decomp_ref.cpp",
-    "rdo_bc_encoder.cpp",
-    "lodepng.cpp",
-    "tessera_bridge.cpp",
-];
-
-const VENDOR_SOURCE_FILES: &[&str] = &[
-    "bc7enc.cpp",
-    "ert.cpp",
-    "rgbcx.cpp",
-    "utils.cpp",
-    "bc7decomp.cpp",
-    "bc7decomp_ref.cpp",
-    "rdo_bc_encoder.cpp",
-    "lodepng.cpp",
 ];
 
 const OWN_SOURCE_FILES: &[&str] = &["tessera_bridge.cpp"];
@@ -62,112 +59,56 @@ const LIBRARY_NAME: &str = "tessera_bc7_shim";
 
 // Vendor Source Management
 
-/// Fetch vendor sources from the bc7enc_rdo repository.
+/// Verify that `native/vendor/bc7enc_rdo/fetch.sh` has been run and produced
+/// a complete, patched vendor directory (including tessera_bridge.cpp/.h,
+/// which are checked into git alongside the vendored files).
 ///
-/// This function clones the repository at a specific commit and copies
-/// only the required files into the vendor directory.
-///
-/// # Arguments
-/// * `vendor_dir` - The directory where vendor sources should be placed
+/// This deliberately does NOT fetch anything itself. fetch.sh clones the
+/// pinned commit and applies source patches (see its patch_ert_h /
+/// patch_utils_cpp steps); duplicating that logic here with a plain,
+/// unpatched clone previously caused silent, hard-to-diagnose build
+/// failures whenever this check's file list didn't exactly match what
+/// fetch.sh provides. A missing file is a setup problem, not something
+/// this build script should paper over -- fail loudly instead and tell
+/// the developer/CI step to run fetch.sh.
 ///
 /// # Panics
-/// Panics if git is not installed, cloning fails, checkout fails,
-/// or file copying fails.
-fn fetch_vendor_sources(vendor_dir: &Path) {
-    // Use a temporary directory for cloning to avoid polluting the source tree
-    let temp_dir = std::env::temp_dir().join(format!(
-        "bc7enc_rdo_clone_{}",
-        std::process::id()
-    ));
+/// Panics with an actionable message if any required file is missing.
+fn check_vendor_sources(vendor_dir: &Path) {
+    let mut missing = Vec::new();
 
-    // Clean up any stale temporary directory
-    if temp_dir.exists() {
-        std::fs::remove_dir_all(&temp_dir)
-            .expect("failed to clean stale bc7enc_rdo clone dir");
-    }
-
-    // Clone the repository
-    let clone_status = Command::new("git")
-        .args([
-            "clone",
-            "--quiet",
-            "https://github.com/richgel999/bc7enc_rdo.git",
-        ])
-        .arg(&temp_dir)
-        .status()
-        .expect("failed to invoke git (is it installed and on PATH?)");
-
-    assert!(
-        clone_status.success(),
-        "git clone of bc7enc_rdo failed"
-    );
-
-    // Checkout the specific commit
-    let checkout_status = Command::new("git")
-        .current_dir(&temp_dir)
-        .args(["checkout", "--quiet", BC7ENC_RDO_COMMIT])
-        .status()
-        .expect("failed to invoke git checkout");
-
-    assert!(
-        checkout_status.success(),
-        "git checkout of bc7enc_rdo commit {} failed",
-        BC7ENC_RDO_COMMIT
-    );
-
-    // Create the vendor directory if it doesn't exist
-    std::fs::create_dir_all(vendor_dir)
-        .expect("failed to create vendor directory");
-
-    // Copy required files from the temporary directory to vendor
-    for file in BC7ENC_RDO_FILES {
-        let src = temp_dir.join(file);
-        let dst = vendor_dir.join(file);
-
-        std::fs::copy(&src, &dst)
-            .unwrap_or_else(|e| panic!("failed to copy vendored file {}: {}", file, e));
-    }
-
-    // Clean up the temporary directory
-    let _ = std::fs::remove_dir_all(&temp_dir);
-}
-
-/// Check if the vendor sources are already present and valid.
-///
-/// # Arguments
-/// * `vendor_dir` - The vendor directory to check
-///
-/// # Returns
-/// `true` if all required source files exist, `false` otherwise.
-fn vendor_sources_exist(vendor_dir: &Path) -> bool {
-    // Check for a representative C++ source file
-    let cpp_marker = vendor_dir.join("bc7enc.cpp");
-    if !cpp_marker.exists() {
-        return false;
-    }
-
-    // Check for a representative header file
-    let header_marker = vendor_dir.join("bc7enc.h");
-    if !header_marker.exists() {
-        return false;
-    }
-
-    // Check for lodepng which is always needed
-    let lodepng_marker = vendor_dir.join("lodepng.cpp");
-    if !lodepng_marker.exists() {
-        return false;
-    }
-
-    // Verify all required files exist
-    for file in SOURCE_FILES {
-        let path = vendor_dir.join(file);
-        if !path.exists() {
-            eprintln!("Warning: Required source file missing: {}", file);
-            return false;
+    for file in VENDOR_REQUIRED_FILES {
+        if !vendor_dir.join(file).exists() {
+            missing.push(*file);
         }
     }
+    for file in OWN_SOURCE_FILES {
+        if !vendor_dir.join(file).exists() {
+            missing.push(*file);
+        }
+    }
+    // tessera_bridge.h is included alongside tessera_bridge.cpp and is
+    // required even though it isn't compiled directly.
+    if !vendor_dir.join("tessera_bridge.h").exists() {
+        missing.push("tessera_bridge.h");
+    }
 
-    true
+    if !missing.is_empty() {
+        panic!(
+            "vendor sources missing or incomplete in {}: {}\n\n\
+             This build expects native/vendor/bc7enc_rdo/fetch.sh to have \
+             already vendored bc7enc_rdo@{} (with patches) into that \
+             directory, and tessera_bridge.cpp/.h to be present from git. \
+             Run:\n    cd {} && ./fetch.sh\n\
+             and re-run the build. (In CI, this happens in the \"Fetch \
+             vendored bc7enc_rdo sources with patches\" step, which must \
+             run before `cargo build`.)",
+            vendor_dir.display(),
+            missing.join(", "),
+            BC7ENC_RDO_COMMIT,
+            vendor_dir.display()
+        );
+    }
 }
 
 // Build Configuration
@@ -246,11 +187,10 @@ fn main() {
     // Determine the vendor directory relative to the project root
     let vendor_dir = Path::new("../vendor/bc7enc_rdo");
 
-    // Fetch vendor sources if they're missing or incomplete
-    if !vendor_sources_exist(vendor_dir) {
-        eprintln!("Vendor sources missing or incomplete. Fetching from repository...");
-        fetch_vendor_sources(vendor_dir);
-    }
+    // Verify vendor sources are present (fetch.sh must have already run --
+    // see the CI workflow's "Fetch vendored bc7enc_rdo sources with
+    // patches" step, or run it manually for local builds).
+    check_vendor_sources(vendor_dir);
 
     let target = std::env::var("TARGET").unwrap_or_default();
     let mut vendor_build = cc::Build::new();
@@ -288,8 +228,14 @@ mod tests {
 
     #[test]
     fn vendor_files_list_is_non_empty() {
-        assert!(!BC7ENC_RDO_FILES.is_empty(), "Vendor files list should not be empty");
-        assert!(!SOURCE_FILES.is_empty(), "Source files list should not be empty");
+        assert!(
+            !VENDOR_REQUIRED_FILES.is_empty(),
+            "Vendor required files list should not be empty"
+        );
+        assert!(
+            !VENDOR_SOURCE_FILES.is_empty(),
+            "Vendor source files list should not be empty"
+        );
     }
 
     #[test]
@@ -298,7 +244,7 @@ mod tests {
         let required_files = &["bc7enc.cpp", "bc7enc.h", "rdo_bc_encoder.cpp"];
         for &file in required_files {
             assert!(
-                BC7ENC_RDO_FILES.contains(&file),
+                VENDOR_REQUIRED_FILES.contains(&file),
                 "Required file '{}' not in vendor files list",
                 file
             );
@@ -307,29 +253,36 @@ mod tests {
 
     #[test]
     fn source_files_are_subset_of_vendor_files() {
-        for &source in SOURCE_FILES {
-            // lodepng.cpp is in the vendor files list
-            // tessera_bridge.cpp is our own file, not from vendor
-            if source != "tessera_bridge.cpp" {
-                assert!(
-                    BC7ENC_RDO_FILES.contains(&source),
-                    "Source file '{}' not in vendor files list",
-                    source
-                );
-            }
+        for &source in VENDOR_SOURCE_FILES {
+            assert!(
+                VENDOR_REQUIRED_FILES.contains(&source),
+                "Vendor source file '{}' not in vendor required files list",
+                source
+            );
         }
     }
 
     #[test]
-    #[ignore] // This test would require git and network access
-    fn fetch_vendor_sources_creates_expected_files() {
-        let temp_dir = std::env::temp_dir().join("test_vendor");
-        let _ = std::fs::remove_dir_all(&temp_dir);
+    fn lodepng_is_not_vendored_or_compiled() {
+        // fetch.sh strips utils.cpp's lodepng/miniz dependency and never
+        // fetches lodepng itself -- this build has no PNG file I/O. If
+        // lodepng ever ends up back in either list, utils.cpp's stubbed
+        // load_png/save_png (see fetch.sh's patch_utils_cpp) and this
+        // build's link step will be out of sync again.
+        assert!(!VENDOR_REQUIRED_FILES.contains(&"lodepng.cpp"));
+        assert!(!VENDOR_REQUIRED_FILES.contains(&"lodepng.h"));
+        assert!(!VENDOR_SOURCE_FILES.contains(&"lodepng.cpp"));
+    }
 
-        fetch_vendor_sources(&temp_dir);
-
-        assert!(vendor_sources_exist(&temp_dir));
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
+    #[test]
+    fn own_source_files_are_not_in_vendor_required_files() {
+        // tessera_bridge.cpp/.h come from git, not from upstream bc7enc_rdo.
+        for &own in OWN_SOURCE_FILES {
+            assert!(
+                !VENDOR_REQUIRED_FILES.contains(&own),
+                "'{}' should not be in VENDOR_REQUIRED_FILES (it's checked into git, not vendored)",
+                own
+            );
+        }
     }
 }
