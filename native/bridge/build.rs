@@ -43,6 +43,19 @@ const SOURCE_FILES: &[&str] = &[
     "tessera_bridge.cpp",
 ];
 
+const VENDOR_SOURCE_FILES: &[&str] = &[
+    "bc7enc.cpp",
+    "ert.cpp",
+    "rgbcx.cpp",
+    "utils.cpp",
+    "bc7decomp.cpp",
+    "bc7decomp_ref.cpp",
+    "rdo_bc_encoder.cpp",
+    "lodepng.cpp",
+];
+
+const OWN_SOURCE_FILES: &[&str] = &["tessera_bridge.cpp"];
+
 /// The name of the compiled static library.
 const LIBRARY_NAME: &str = "tessera_bc7_shim";
 
@@ -207,8 +220,8 @@ fn configure_compiler_flags(build: &mut cc::Build, target: &str) {
 /// # Arguments
 /// * `build` - The cc::Build instance to configure
 /// * `vendor_dir` - The vendor directory containing source files
-fn add_source_files(build: &mut cc::Build, vendor_dir: &Path) {
-    for source in SOURCE_FILES {
+fn add_source_files(build: &mut cc::Build, vendor_dir: &Path, files: &[&str]) {
+    for source in files {
         let path = vendor_dir.join(source);
         build.file(&path);
 
@@ -238,25 +251,26 @@ fn main() {
         fetch_vendor_sources(vendor_dir);
     }
 
-    // Configure the C++ build
     let target = std::env::var("TARGET").unwrap_or_default();
-    let mut build = cc::Build::new();
+    let mut vendor_build = cc::Build::new();
+    vendor_build
+        .cpp(true)
+        .std("c++17")                 // conservative: what this vendor code actually targets
+        .include(vendor_dir)
+        .opt_level(3);
+    configure_compiler_flags(&mut vendor_build, &target);
+    add_source_files(&mut vendor_build, vendor_dir, VENDOR_SOURCE_FILES);
+    vendor_build.compile("tessera_bc7_vendor");
 
-    // Basic C++ configuration
-    build
-        .cpp(true)                    // Compile as C++
-        .std("c++23")                 // Use C++23 standard
-        .include(vendor_dir)          // Add vendor directory to include path
-        .opt_level(3);               // High optimization level
-
-    // Platform-specific compiler flags
-    configure_compiler_flags(&mut build, &target);
-
-    // Add all source files
-    add_source_files(&mut build, vendor_dir);
-
-    // Compile the static library
-    build.compile(LIBRARY_NAME);
+    let mut own_build = cc::Build::new();
+    own_build
+        .cpp(true)
+        .std("c++23")
+        .include(vendor_dir)          // tessera_bridge.cpp includes vendor headers
+        .opt_level(3);
+    configure_compiler_flags(&mut own_build, &target);
+    add_source_files(&mut own_build, vendor_dir, OWN_SOURCE_FILES);
+    own_build.compile(LIBRARY_NAME);
 
     // Tell Cargo to rerun this script if the build script itself changes
     println!("cargo:rerun-if-changed=build.rs");
