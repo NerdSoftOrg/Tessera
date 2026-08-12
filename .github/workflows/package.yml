@@ -86,6 +86,10 @@ jobs:
           restore-keys: |
             cargo-${{ matrix.platform_dir }}-
 
+      - name: Clean vendor directory to force re-fetch with patches
+        run: |
+          rm -rf native/vendor/bc7enc_rdo/*.cpp native/vendor/bc7enc_rdo/*.h native/vendor/bc7enc_rdo/LICENSE
+
       - name: Fetch vendored bc7enc_rdo sources with patches
         working-directory: native/vendor/bc7enc_rdo
         run: |
