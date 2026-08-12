@@ -61,9 +61,6 @@ public final class Bc1ComputeEncoder {
     private Bc1ComputeEncoder() {
     }
 
-    public record EncodedBlocks(ByteBuffer packedBlocks, int blocksWide, int blocksHigh) {
-    }
-
     /**
      * Encodes {@code sourceRgba8} (tightly packed, row-major RGBA8, no
      * padding) into BC1 blocks via the compute shader. Returns
@@ -114,6 +111,37 @@ public final class Bc1ComputeEncoder {
 
             int blocksPerRowUniform = GL43.glGetUniformLocation(program, "blocksPerRow");
             GL43.glUniform1i(blocksPerRowUniform, blocksWide);
+
+            // Root-cause fix (debug.log: "GL error 1282 during BC1 compute
+            // dispatch; falling back to CPU compression" firing on every
+            // reload despite the dispatch itself being spec-correct).
+            // glGetError() reports the OLDEST unread error currently
+            // flagged on this context, not "any error since my last call" --
+            // it is a queue (of at least one slot; drained one-at-a-time),
+            // not an edge-triggered signal scoped to the calls between two
+            // polls. Vanilla's TextureAtlas.upload() for the opaque atlas
+            // runs immediately before this method on the same render-thread
+            // frame and reliably trips the confirmed-benign MC-293754
+            // GL_INVALID_OPERATION (see KnownEngineBugLogFilter's class doc)
+            // -- that filter only suppresses GlDebug's async log line for
+            // it, it does not and cannot drain the classic polled error
+            // queue the debug callback and glGetError() both observe. With
+            // no intervening glGetError() call anywhere else in the
+            // pipeline, that stale, unrelated, already-resolved error is
+            // exactly what this poll picks up, and every BC1 GPU dispatch
+            // was being misdiagnosed as failed and needlessly falling back
+            // to CPU compression as a result. Draining the queue immediately
+            // before dispatch (bounded: GL never queues more than one error
+            // of a given type back-to-back, so this converges in at most a
+            // handful of iterations even in a pathological case) ensures
+            // the poll below can only observe an error this dispatch itself
+            // caused.
+            //noinspection StatementWithEmptyBody
+            while (GL11.glGetError() != GL11.GL_NO_ERROR) {
+                // Drain only -- nothing to log here, these are pre-existing
+                // errors from earlier GL calls this frame, not this method's
+                // concern.
+            }
 
             // Workgroup size is 8x8 texels = one 4x4 block per invocation
             // within an 8x8-texel (2x2-block) local group -- see the
@@ -259,5 +287,8 @@ public final class Bc1ComputeEncoder {
             LOGGER.error("Failed to read BC1 compute shader resource.", e);
             return null;
         }
+    }
+
+    public record EncodedBlocks(ByteBuffer packedBlocks, int blocksWide, int blocksHigh) {
     }
 }

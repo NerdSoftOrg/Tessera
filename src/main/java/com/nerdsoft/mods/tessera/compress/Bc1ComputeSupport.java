@@ -1,5 +1,6 @@
 package com.nerdsoft.mods.tessera.compress;
 
+import com.nerdsoft.mods.tessera.atlas.SplitAtlasManager;
 import org.lwjgl.opengl.GL;
 
 /**
@@ -18,12 +19,33 @@ import org.lwjgl.opengl.GL;
  * contexts that expose compute via extension rather than core support,
  * matching how {@link Bc7GpuSupport} checks both an extension and a core
  * version flag for BPTC.
+ *
+ * <h2>Render-thread warmup requirement</h2>
+ * See {@link Bc1TextureFormatSupport}'s class doc for the full root-cause
+ * writeup -- this class has the identical bug and identical fix.
+ * {@code GL.getCapabilities()} is thread-local to whichever thread has a
+ * GL context current; {@link SplitAtlasManager}'s background stitch
+ * executor was the first real caller of {@link #isSupported()}, has no
+ * context current, threw inside the try block, and permanently memoized
+ * {@code false}. {@link #warmUp()} must be called from the render thread
+ * (see {@code Tessera#onClientSetup}) before any background caller can
+ * reach {@link #isSupported()} first.
  */
 public final class Bc1ComputeSupport {
 
     private static volatile Boolean supported;
 
     private Bc1ComputeSupport() {
+    }
+
+    /**
+     * Forces capability detection now, on whatever thread calls this --
+     * callers MUST invoke this from the render thread before
+     * {@link SplitAtlasManager}'s background stitch path can reach
+     * {@link #isSupported()} first. No-op if already cached.
+     */
+    public static void warmUp() {
+        isSupported();
     }
 
     public static boolean isSupported() {
@@ -46,6 +68,10 @@ public final class Bc1ComputeSupport {
                 found = true;
             }
         } catch (Throwable ignored) {
+            // No GL context current on this thread (background executor
+            // call before warmUp() ran) -- do not memoize `false` here,
+            // or the real driver capability is never consulted again.
+            return false;
         }
 
         supported = found;

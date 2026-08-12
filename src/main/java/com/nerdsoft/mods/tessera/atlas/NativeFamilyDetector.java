@@ -12,24 +12,6 @@ public final class NativeFamilyDetector {
     private NativeFamilyDetector() {
     }
 
-    public record SpriteInput(int srcOffset, int width, int height, int destX, int destY, boolean tinted) {
-    }
-
-    public record Family(int representativeIndex, List<Integer> memberIndices) {
-    }
-
-    public enum AlphaShape {
-        FULLY_OPAQUE,
-        PUNCH_THROUGH,
-        BLENDED
-    }
-
-    public record DetectionResult(
-            long[] fingerprints, List<Family> families, boolean[] alphaFlags, AlphaShape[] alphaShapes,
-            ByteBuffer atlasBuffer
-    ) {
-    }
-
     public static DetectionResult detect(
             ByteBuffer pixels,
             List<SpriteInput> sprites,
@@ -125,5 +107,23 @@ public final class NativeFamilyDetector {
     private static ByteBuffer readAtlasBuffer(ByteBuffer wire, int atlasWidth, int atlasHeight) {
         int atlasBytes = atlasWidth * atlasHeight * 4;
         return WireFormat.readLengthPrefixedBuffer(wire, atlasBytes);
+    }
+
+    public enum AlphaShape {
+        FULLY_OPAQUE,
+        PUNCH_THROUGH,
+        BLENDED
+    }
+
+    public record SpriteInput(int srcOffset, int width, int height, int destX, int destY, boolean tinted) {
+    }
+
+    public record Family(int representativeIndex, List<Integer> memberIndices) {
+    }
+
+    public record DetectionResult(
+            long[] fingerprints, List<Family> families, boolean[] alphaFlags, AlphaShape[] alphaShapes,
+            ByteBuffer atlasBuffer
+    ) {
     }
 }

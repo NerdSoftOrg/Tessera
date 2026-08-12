@@ -124,14 +124,30 @@ tasks {
         .map { it.toBoolean() }
         .orElse(false)
 
-    val targetsToBuild = if (explicitTarget.isNotBlank()) {
-        listOf(explicitTarget)
-    } else {
-        listOf(
+    val isFatBuild = providers.gradleProperty("tessera.fatJar")
+        .map { it.toBoolean() }
+        .orElse(false)
+        .get()
+
+    val hostTriple = run {
+        val isWindows = System.getProperty("os.name").lowercase().contains("win")
+        val isAarch64 = System.getProperty("os.arch").lowercase()
+            .let { it.contains("aarch64") || it.contains("arm64") }
+        when {
+            isWindows -> "x86_64-pc-windows-msvc"
+            isAarch64 -> "aarch64-unknown-linux-gnu"
+            else -> "x86_64-unknown-linux-gnu"
+        }
+    }
+
+    val targetsToBuild = when {
+        explicitTarget.isNotBlank() -> listOf(explicitTarget)
+        isFatBuild -> listOf(
             "x86_64-pc-windows-msvc",
             "x86_64-unknown-linux-gnu",
             "aarch64-unknown-linux-gnu"
         )
+        else -> listOf(hostTriple)
     }
 
     val nativeBuildTasks = targetsToBuild.map { target ->

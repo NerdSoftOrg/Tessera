@@ -5,15 +5,17 @@ import com.nerdsoft.mods.tessera.Tessera;
 import com.nerdsoft.mods.tessera.TesseraClient;
 import com.nerdsoft.mods.tessera.atlas.AtlasSplitTarget;
 import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.ShaderInstance;
 import net.minecraft.core.BlockPos;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
+import org.lwjgl.opengl.GL30;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,43 +27,7 @@ import org.slf4j.LoggerFactory;
  * target in one pass -- this is the two-extra-binds-per-frame (not
  * per-section) design confirmed with the person before implementation
  * began.
- *
- * <h2>Confirmed vs. unconfirmed</h2>
- * {@code RenderLevelStageEvent}'s accessor methods used here
- * ({@code getStage()}, {@code getLevelRenderer()}, {@code getPoseStack()},
- * {@code getProjectionMatrix()}, {@code getCamera()}) and the
- * {@code Stage} enum constants ({@code AFTER_SOLID_BLOCKS},
- * {@code AFTER_CUTOUT_MIPPED_BLOCKS}) are confirmed against NeoForge's own
- * documentation across the 1.21.0-beta/1.21.1 era. The event's exact
- * <em>constructor</em> shape varies across 1.21.x minor versions (a
- * meaningfully different shape was confirmed to exist by 1.21.10 during
- * this project's own research), but this class never constructs the
- * event, only reads from it via accessors, which sidesteps that
- * version-churn risk.
- *
- * <p>{@code RenderSystem.applyModelViewMatrix()}/{@code getModelViewStack()}
- * (returning {@code Matrix4fStack}) used in
- * {@link #tessera$drawSection} are confirmed present with this exact
- * signature against Yarn's 1.21.1+build.3 mappings -- the precise target
- * version, not an adjacent one. Worth flagging for future maintenance:
- * this same lookup also confirmed {@code RenderSystem} was substantially
- * restructured around a new {@code GpuDevice}/{@code RenderPass}
- * abstraction starting around 1.21.5, removing several of the methods
- * used here entirely -- this class's direct-GL approach is specific to
- * 1.21.1's still-classic-OpenGL-style {@code RenderSystem} and would need
- * a rewrite, not a small patch, to target anything past roughly 1.21.4.</p>
- *
- * <p><strong>Persistent buffer caching:</strong> {@link #tessera$drawSection}
- * reuses a persistent GL buffer across frames via
- * {@link SectionGeometryStore.GpuBufferCache}, keyed on
- * {@code CompiledSectionGeometry} object identity -- an earlier version of
- * this class created and destroyed a transient VBO on every section every
- * frame, which was correct but wasteful given this project's FPS goal.
- * Re-upload now only happens when a section's geometry instance actually
- * changes (i.e. the section recompiled), not every frame regardless of
- * whether anything changed.</p>
  */
-// Compatibility for 1.21
 @SuppressWarnings("removal")
 @EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class LevelRenderHandler {
@@ -69,6 +35,7 @@ public final class LevelRenderHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/LevelRenderHandler");
     private static volatile int tessera$sharedQuadIndexBuffer = -1;
     private static volatile int tessera$sharedQuadIndexBufferCapacity = 0;
+    private static volatile int tessera$vao = -1;
 
     private LevelRenderHandler() {
     }
@@ -85,6 +52,15 @@ public final class LevelRenderHandler {
             return;
         }
 
+        if (!TesseraClient.SPLIT_ATLAS_MANAGER.hasContent(target)) {
+            return;
+        }
+
+        int storedSections = SectionGeometryStore.getSectionCount(target);
+        if (storedSections == 0) {
+            return;
+        }
+
         var atlas = TesseraClient.SPLIT_ATLAS_MANAGER.atlasFor(target);
         int textureId = atlas.getId();
 
@@ -93,19 +69,27 @@ public final class LevelRenderHandler {
         double camY = camera.getPosition().y();
         double camZ = camera.getPosition().z();
 
+        RenderSystem.setShader(target == AtlasSplitTarget.OPAQUE
+                ? GameRenderer::getRendertypeSolidShader
+                : GameRenderer::getRendertypeCutoutMippedShader);
         RenderSystem.setShaderTexture(0, textureId);
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         RenderSystem.enableDepthTest();
 
+        ShaderInstance shader = RenderSystem.getShader();
+        if (shader != null) {
+            RenderSystem.setupShaderLights(shader);
+        }
+
         int[] drawnSections = {0};
         SectionGeometryStore.forEachSection(target, (sectionOrigin, geometry) ->
-                tessera$drawSection(sectionOrigin, geometry, camX, camY, camZ, event.getModelViewMatrix(), event.getProjectionMatrix(), drawnSections));
+                tessera$drawSection(sectionOrigin, geometry, camX, camY, camZ, shader, drawnSections));
 
         RenderSystem.disableBlend();
 
         if (drawnSections[0] > 0) {
-            LOGGER.debug("Drew {} sections for Tessera atlas {}.", drawnSections[0], target);
+            LOGGER.info("[Tessera-Debug] Drew {} sections for Tessera atlas {}.", drawnSections[0], target);
         }
     }
 
@@ -120,22 +104,17 @@ public final class LevelRenderHandler {
      * miss (this exact {@code CompiledSectionGeometry} instance has never
      * been uploaded before), which per that record's own doc only happens
      * when the section has genuinely recompiled.
-     *
-     * <p><strong>UNVERIFIED:</strong> vertex attribute pointers below are
-     * written against the standard, well-established OpenGL 3.x+ pattern
-     * for interleaved vertex buffers (stable, confirmed API), but the
-     * exact byte layout assumed (element order confirmed, per-element
-     * component counts best-effort) is not independently confirmed
-     * against Minecraft's real vertex data -- see the stride-derivation
-     * comment below and {@code TesseraSectionGeometryHandler}'s own doc
-     * for the full caveat. A mismatch here would produce visually wrong
-     * (garbled position/color/UV) but not crashing output.
      */
     @SuppressWarnings("unused")
     private static void tessera$drawSection(
             BlockPos sectionOrigin, SectionGeometryStore.CompiledSectionGeometry geometry,
-            double camX, double camY, double camZ, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, int[] drawnSections
+            double camX, double camY, double camZ, ShaderInstance shader, int[] drawnSections
     ) {
+        if (tessera$vao < 0) {
+            tessera$vao = GL30.glGenVertexArrays();
+        }
+        GL30.glBindVertexArray(tessera$vao);
+
         int vbo = SectionGeometryStore.GpuBufferCache.get(geometry).orElseGet(() -> {
             int newBuffer = GL15.glGenBuffers();
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, newBuffer);
@@ -154,19 +133,7 @@ public final class LevelRenderHandler {
 
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
 
-        // Stride derived from the buffer's own actual size rather than a
-        // hardcoded element count -- self-consistent with whatever
-        // TesseraSectionGeometryHandler.tessera$bakeVertices actually
-        // produces (4 vertices per quad, N floats per vertex, N
-        // determined by BakedQuad.getVertices().length / 4, itself not
-        // independently confirmed against Minecraft's real
-        // DefaultVertexFormat.BLOCK layout -- see that method's own doc).
-        // Deriving here instead of hardcoding means this file cannot
-        // silently drift out of sync with that one even if the true
-        // element count differs from what either file assumes.
-        int totalVertices = geometry.quadCount() * 4;
-        int floatsPerVertex = (geometry.vertexData().remaining() / Float.BYTES) / totalVertices;
-        int stride = floatsPerVertex * Float.BYTES;
+        int stride = 32;
 
         // UNVERIFIED byte layout, best-effort: element ORDER is confirmed
         // (Position, Color, UV, Lightmap, Normal -- no Overlay -- via
@@ -207,18 +174,13 @@ public final class LevelRenderHandler {
         GL20.glEnableVertexAttribArray(4);
         GL20.glVertexAttribPointer(4, 4, GL11.GL_BYTE, true, stride, 28L);
 
-        // Camera-relative translation: sectionOrigin is in absolute world
-        // coordinates, but vanilla's own chunk rendering (and therefore
-        // the modelViewMatrix this event supplies) is camera-relative --
-        // subtracting the camera position matches that convention so this
-        // section draws at the correct relative position rather than
-        // offset by the camera's own absolute coordinates.
-        Matrix4f sectionModelView = new Matrix4f(modelViewMatrix)
-                .translate((float) (sectionOrigin.getX() - camX), (float) (sectionOrigin.getY() - camY), (float) (sectionOrigin.getZ() - camZ));
-
-        RenderSystem.getModelViewStack().pushMatrix();
-        RenderSystem.getModelViewStack().mul(sectionModelView);
-        RenderSystem.applyModelViewMatrix();
+        if (shader != null && shader.CHUNK_OFFSET != null) {
+            shader.CHUNK_OFFSET.set(
+                    (float) (sectionOrigin.getX() - camX),
+                    (float) (sectionOrigin.getY() - camY),
+                    (float) (sectionOrigin.getZ() - camZ));
+            shader.apply();
+        }
 
         // GL_QUADS is not a valid primitive mode in core OpenGL profiles
         // -- vanilla's own VertexFormat.Mode.QUADS is a logical grouping
@@ -233,12 +195,17 @@ public final class LevelRenderHandler {
         int indexBuffer = tessera$ensureQuadIndexBuffer(geometry.quadCount());
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, indexBuffer);
         GL11.glDrawElements(GL11.GL_TRIANGLES, geometry.quadCount() * 6, GL11.GL_UNSIGNED_INT, 0L);
+
+        GL20.glDisableVertexAttribArray(0);
+        GL20.glDisableVertexAttribArray(1);
+        GL20.glDisableVertexAttribArray(2);
+        GL20.glDisableVertexAttribArray(3);
+        GL20.glDisableVertexAttribArray(4);
+
         GL15.glBindBuffer(GL15.GL_ELEMENT_ARRAY_BUFFER, 0);
-
-        RenderSystem.getModelViewStack().popMatrix();
-        RenderSystem.applyModelViewMatrix();
-
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, 0);
+        GL30.glBindVertexArray(0);
+
         drawnSections[0]++;
     }
 

@@ -2,6 +2,8 @@ package com.nerdsoft.mods.tessera.config;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 
+import java.util.List;
+
 public final class Config {
 
     public static final ModConfigSpec SPEC;
@@ -13,7 +15,7 @@ public final class Config {
     public static final ModConfigSpec.IntValue MAX_QUALITY_STEP_DOWN_ATTEMPTS;
     public static final ModConfigSpec.ConfigValue<String> CACHE_DIRECTORY;
     public static final ModConfigSpec.BooleanValue DISABLE_NATIVE_COMPRESSION;
-    public static final ModConfigSpec.BooleanValue DISABLE_ANIMATIONS;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> DISABLE_ANIMATIONS_ATLASES;
     public static final ModConfigSpec.BooleanValue SHOW_EXTENDED_DEBUG_BREAKDOWN;
 
     static {
@@ -34,13 +36,14 @@ public final class Config {
                 .translation("tessera.configuration.disableNativeCompression")
                 .define("disableNativeCompression", false);
 
-        DISABLE_ANIMATIONS = builder
+        DISABLE_ANIMATIONS_ATLASES = builder
                 .comment(
-                        "Forces freezing of texture animations to allow BC7 compression on massive atlases (blocks.png, gui.png).",
-                        "Useful for maximum VRAM savings in large modpacks like ATM10 at the cost of static water/lava/GUI animations."
+                        "List of atlas locations where animations should be disabled.",
+                        "Useful for maximum VRAM savings in large modpacks like ATM10 at the cost of static water/lava animations.",
+                        "Requires a resource reload to take effect; the settings screen triggers one automatically on save."
                 )
-                .translation("tessera.configuration.disableAnimationsForMaxVramSavings")
-                .define("disableAnimationsForMaxVramSavings", false);
+                .translation("tessera.configuration.disableAnimationsAtlases")
+                .defineList("disableAnimationsAtlases", List.of("minecraft:textures/atlas/blocks"), o -> o instanceof String);
 
         builder.pop();
 
@@ -107,5 +110,12 @@ public final class Config {
     }
 
     private Config() {
+    }
+
+    public record ReloadSensitiveSnapshot(String cacheDirectory, List<? extends String> disableAnimationsAtlases,
+                                          int compressionQuality) {
+        public static ReloadSensitiveSnapshot capture() {
+            return new ReloadSensitiveSnapshot(CACHE_DIRECTORY.get(), DISABLE_ANIMATIONS_ATLASES.get(), COMPRESSION_QUALITY.get());
+        }
     }
 }

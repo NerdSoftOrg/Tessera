@@ -12,6 +12,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.client.model.BakedModelWrapper;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,34 +30,12 @@ import java.util.Set;
  * is what actually draws that geometry instead, via
  * {@code AddSectionGeometryEvent} -- see that class's doc for why this
  * split is required and how the two halves stay in sync.
- *
- * <h2>Why this is the correct (and only confirmed-safe) suppression point</h2>
- * An earlier draft of Tessera's render integration tried to have
- * {@code getRenderTypes()} report an entirely new, Tessera-owned
- * {@code RenderType} for such blocks. That is confirmed, three times over
- * during this project's research (via {@code RegisterNamedRenderTypesEvent}'s
- * chunk-type restriction, {@code IBakedModelExtension.getRenderTypes}'s own
- * restriction to {@code chunkBufferLayers()}, and
- * {@code SectionRenderingContext.getOrCreateChunkBuffer}'s identical
- * restriction) to be impossible: nothing in vanilla or NeoForge will ever
- * compile geometry for a render type outside {@code chunkBufferLayers()}
- * during normal chunk section compilation. This class does not attempt
- * that. It works entirely within the closed set: {@code getRenderTypes()}
- * still only ever returns vanilla's own layers (inherited unchanged from
- * {@link BakedModelWrapper}), and {@code getQuads()} simply omits whatever
- * quads are Tessera-owned from what it returns for a suppressible layer.
- *
- * <h2>Partial-layer blocks</h2>
- * A block whose {@code solid()} quads are a <em>mix</em> of vanilla-atlas
- * and Tessera-atlas sprites (uncommon, but not impossible for a multi-part
- * model) is handled conservatively via quad-level filtering, not
- * whole-layer suppression -- vanilla-atlas quads on that same block/layer
- * still render normally through vanilla's own buffer. Only quads that are
- * Tessera-routed are removed from what {@code getQuads} returns.
  */
 public final class ModelWrapper extends BakedModelWrapper<BakedModel> {
 
     private static final Set<RenderType> SUPPRESSIBLE_LAYERS = Set.of(RenderType.solid(), RenderType.cutoutMipped(), RenderType.cutout());
+    private static final Logger LOGGER = LoggerFactory.getLogger("Tessera");
+    private static boolean loggedOnce = false;
 
     public ModelWrapper(BakedModel original) {
         super(original);
@@ -85,11 +65,21 @@ public final class ModelWrapper extends BakedModelWrapper<BakedModel> {
         }
 
         List<BakedQuad> filtered = new ArrayList<>(quads.size());
+        int suppressedCount = 0;
+
         for (BakedQuad quad : quads) {
             if (tessera$routingFor(quad) == null) {
                 filtered.add(quad);
+            } else {
+                suppressedCount++;
             }
         }
+
+        if (!loggedOnce && state != null && suppressedCount > 0) {
+            LOGGER.info("[Tessera-Debug] First block quad suppression confirmed on {}. (Further logs muted)", state.getBlock());
+            loggedOnce = true;
+        }
+
         return filtered;
     }
 

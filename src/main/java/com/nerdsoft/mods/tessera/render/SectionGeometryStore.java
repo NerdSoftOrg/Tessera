@@ -45,7 +45,66 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class SectionGeometryStore {
 
+    private static final Map<SectionKey, Map<AtlasSplitTarget, CompiledSectionGeometry>> SECTIONS = new ConcurrentHashMap<>();
+
     private SectionGeometryStore() {
+    }
+
+    /**
+     * Called from {@link SectionGeometryHandler}'s
+     * {@code AdditionalSectionRenderer} callback, which per
+     * {@code AddSectionGeometryEvent}'s own documentation runs on
+     * "the thread performing the rebuild, which will typically not be the
+     * main thread" -- {@link ConcurrentHashMap} is used specifically to be
+     * safe under that documented concurrent-write contract, since
+     * different sections can compile concurrently on different worker
+     * threads.
+     */
+    public static void putSection(BlockPos sectionOrigin, AtlasSplitTarget target, CompiledSectionGeometry geometry) {
+        SECTIONS.computeIfAbsent(SectionKey.of(sectionOrigin), k -> new ConcurrentHashMap<>()).put(target, geometry);
+    }
+
+    /**
+     * Removes a target's geometry for a section, e.g. when a recompile
+     * determines that section no longer has any quads for that target
+     * (all Tessera-routed blocks were removed/changed). Passing an empty
+     * per-target map to {@link #putSection} instead of calling this is
+     * equally valid -- {@link #forEachSection} skips empty entries either
+     * way -- this method exists for callers that prefer explicit removal.
+     */
+    public static void removeSectionTarget(BlockPos sectionOrigin, AtlasSplitTarget target) {
+        Map<AtlasSplitTarget, CompiledSectionGeometry> perTarget = SECTIONS.get(SectionKey.of(sectionOrigin));
+        if (perTarget != null) {
+            perTarget.remove(target);
+        }
+    }
+
+    /**
+     * See this class's lifecycle doc -- not currently called by anything.
+     */
+    @SuppressWarnings("unused")
+    public static void removeSection(BlockPos sectionOrigin) {
+        SECTIONS.remove(SectionKey.of(sectionOrigin));
+    }
+
+    /**
+     * Render-thread iteration for {@link LevelRenderHandler}.
+     * {@code action}'s first argument is the section origin reconstructed
+     * from the internal key -- allocates one {@link BlockPos} per section
+     * per draw call, which is a small, bounded per-frame allocation
+     * (bounded by loaded-section count, not by anything scaling with
+     * frame complexity) rather than a hot-path per-quad or per-vertex
+     * allocation, consistent with this project's zero-hot-path-allocation
+     * goal for anything that actually scales with scene complexity.
+     */
+    public static void forEachSection(AtlasSplitTarget target, java.util.function.BiConsumer<BlockPos, CompiledSectionGeometry> action) {
+        for (Map.Entry<SectionKey, Map<AtlasSplitTarget, CompiledSectionGeometry>> entry : SECTIONS.entrySet()) {
+            CompiledSectionGeometry geometry = entry.getValue().get(target);
+            if (geometry != null && geometry.quadCount() > 0) {
+                SectionKey key = entry.getKey();
+                action.accept(new BlockPos(key.x(), key.y(), key.z()), geometry);
+            }
+        }
     }
 
     /**
@@ -125,62 +184,14 @@ public final class SectionGeometryStore {
         }
     }
 
-    private static final Map<SectionKey, Map<AtlasSplitTarget, CompiledSectionGeometry>> SECTIONS = new ConcurrentHashMap<>();
-
-    /**
-     * Called from {@link SectionGeometryHandler}'s
-     * {@code AdditionalSectionRenderer} callback, which per
-     * {@code AddSectionGeometryEvent}'s own documentation runs on
-     * "the thread performing the rebuild, which will typically not be the
-     * main thread" -- {@link ConcurrentHashMap} is used specifically to be
-     * safe under that documented concurrent-write contract, since
-     * different sections can compile concurrently on different worker
-     * threads.
-     */
-    public static void putSection(BlockPos sectionOrigin, AtlasSplitTarget target, CompiledSectionGeometry geometry) {
-        SECTIONS.computeIfAbsent(SectionKey.of(sectionOrigin), k -> new ConcurrentHashMap<>()).put(target, geometry);
-    }
-
-    /**
-     * Removes a target's geometry for a section, e.g. when a recompile
-     * determines that section no longer has any quads for that target
-     * (all Tessera-routed blocks were removed/changed). Passing an empty
-     * per-target map to {@link #putSection} instead of calling this is
-     * equally valid -- {@link #forEachSection} skips empty entries either
-     * way -- this method exists for callers that prefer explicit removal.
-     */
-    public static void removeSectionTarget(BlockPos sectionOrigin, AtlasSplitTarget target) {
-        Map<AtlasSplitTarget, CompiledSectionGeometry> perTarget = SECTIONS.get(SectionKey.of(sectionOrigin));
-        if (perTarget != null) {
-            perTarget.remove(target);
-        }
-    }
-
-    /**
-     * See this class's lifecycle doc -- not currently called by anything.
-     */
-    @SuppressWarnings("unused")
-    public static void removeSection(BlockPos sectionOrigin) {
-        SECTIONS.remove(SectionKey.of(sectionOrigin));
-    }
-
-    /**
-     * Render-thread iteration for {@link LevelRenderHandler}.
-     * {@code action}'s first argument is the section origin reconstructed
-     * from the internal key -- allocates one {@link BlockPos} per section
-     * per draw call, which is a small, bounded per-frame allocation
-     * (bounded by loaded-section count, not by anything scaling with
-     * frame complexity) rather than a hot-path per-quad or per-vertex
-     * allocation, consistent with this project's zero-hot-path-allocation
-     * goal for anything that actually scales with scene complexity.
-     */
-    public static void forEachSection(AtlasSplitTarget target, java.util.function.BiConsumer<BlockPos, CompiledSectionGeometry> action) {
+    public static int getSectionCount(AtlasSplitTarget target) {
+        int count = 0;
         for (Map.Entry<SectionKey, Map<AtlasSplitTarget, CompiledSectionGeometry>> entry : SECTIONS.entrySet()) {
             CompiledSectionGeometry geometry = entry.getValue().get(target);
             if (geometry != null && geometry.quadCount() > 0) {
-                SectionKey key = entry.getKey();
-                action.accept(new BlockPos(key.x(), key.y(), key.z()), geometry);
+                count++;
             }
         }
+        return count;
     }
 }

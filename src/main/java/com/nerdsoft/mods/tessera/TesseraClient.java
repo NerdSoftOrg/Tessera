@@ -16,16 +16,16 @@ public final class TesseraClient {
     }
 
     @SuppressWarnings("unused")
+    public static ResourceLocation getActiveQuadSprite() {
+        return ACTIVE_QUAD_SPRITE.get();
+    }
+
+    @SuppressWarnings("unused")
     public static void setActiveQuadSprite(ResourceLocation location) {
         if (location == null) {
             ACTIVE_QUAD_SPRITE.remove();
         } else {
             ACTIVE_QUAD_SPRITE.set(location);
         }
-    }
-
-    @SuppressWarnings("unused")
-    public static ResourceLocation getActiveQuadSprite() {
-        return ACTIVE_QUAD_SPRITE.get();
     }
 }

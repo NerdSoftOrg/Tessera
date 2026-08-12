@@ -26,33 +26,17 @@ public final class DebugOverlay {
     private static final int GL_GPU_MEM_INFO_CURRENT_AVAILABLE_NVX = 0x9049;
     private static final int GL_VBO_FREE_MEMORY_ATI = 0x87FC;
 
-
     private static final long HARDWARE_VRAM_REFRESH_INTERVAL_MS = 1000L;
-
-    private static volatile String cachedHardwareVramUsage = "§7N/A (Driver Limited)§r";
-    private static volatile long lastHardwareVramQueryMs = -1L;
-
+    private static final Map<String, AtlasStats> perAtlasStats = new ConcurrentHashMap<>();
+    private static final Map<String, AtlasStats> perBucketStats = new ConcurrentHashMap<>();
     public static boolean isCompressedAtlasActive = false;
     public static long bytesSavedByBC7 = 0;
     public static long totalCompressedAtlasBytes = 0;
+    private static volatile String cachedHardwareVramUsage = "§7N/A (Driver Limited)§r";
+    private static volatile long lastHardwareVramQueryMs = -1L;
 
-
-    private static final Map<String, AtlasStats> perAtlasStats = new ConcurrentHashMap<>();
-
-    public record AtlasStats(long bytesSaved, long compressedBytes) {
+    private DebugOverlay() {
     }
-
-    /**
-     * Per-bucket breakdown within a single atlas -- e.g. "blocks.png/OPAQUE_BC1"
-     * vs "blocks.png/ALPHA_BC7"-- so the debug overlay can show which of
-     * the three physical textures is contributing how much to an atlas's
-     * total savings, not just the atlas-wide sum. Keyed by
-     * {@code atlasLocation + "/"+ bucketName} rather than a nested map, to
-     * keep the accumulation semantics (additive merge, same as
-     * {@link #perAtlasStats}) identical between the two maps.
-     */
-    private static final Map<String, AtlasStats> perBucketStats = new ConcurrentHashMap<>();
-
 
     @SuppressWarnings("unused")
     public static void recordCompression(String atlasLocation, long savedBytes, long compressedBytes) {
@@ -97,9 +81,6 @@ public final class DebugOverlay {
     @SuppressWarnings("unused")
     public static Map<String, AtlasStats> getPerAtlasStats() {
         return Map.copyOf(perAtlasStats);
-    }
-
-    private DebugOverlay() {
     }
 
     @SubscribeEvent
@@ -168,14 +149,18 @@ public final class DebugOverlay {
             return;
         }
 
+        rightList.add("");
         rightList.add("§7Per-atlas:§r");
         perAtlasStats.entrySet().stream()
                 .sorted((a, b) -> Long.compare(b.getValue().bytesSaved(), a.getValue().bytesSaved()))
                 .forEach(entry -> {
                     double atlasSavedMB = entry.getValue().bytesSaved() / (1024.0 * 1024.0);
-                    rightList.add(String.format(" §7%s: §a%.2f MB§r", entry.getKey(), atlasSavedMB));
+                    rightList.add(String.format("§7%s: §a%.2f MB§r", entry.getKey(), atlasSavedMB));
                     appendBucketBreakdownFor(rightList, entry.getKey());
                 });
+
+        rightList.add("§7hud_alpha: §eReserved§r");
+        rightList.add("§7hud_opaque: §eReserved§r");
     }
 
     /**
@@ -219,14 +204,12 @@ public final class DebugOverlay {
         try {
             var caps = GL.getCapabilities();
 
-
             if (caps.GL_NVX_gpu_memory_info) {
                 int totalKb = GL11.glGetInteger(GL_GPU_MEM_INFO_TOTAL_AVAILABLE_NVX);
                 int freeKb = GL11.glGetInteger(GL_GPU_MEM_INFO_CURRENT_AVAILABLE_NVX);
                 int usedKb = totalKb - freeKb;
                 return String.format("%dMB / %dMB", usedKb / 1024, totalKb / 1024);
             }
-
 
             if (caps.GL_ATI_meminfo) {
                 int[] info = new int[4];
@@ -237,7 +220,9 @@ public final class DebugOverlay {
 
         }
 
-
         return "§7N/A (Driver Limited)§r";
+    }
+
+    public record AtlasStats(long bytesSaved, long compressedBytes) {
     }
 }

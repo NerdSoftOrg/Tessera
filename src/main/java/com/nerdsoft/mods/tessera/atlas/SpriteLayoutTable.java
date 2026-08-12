@@ -28,6 +28,31 @@ public final class SpriteLayoutTable {
         this.pixels = pixels;
     }
 
+    /**
+     * Computes the layout (widths/heights/srcOffsets) and allocates the
+     * direct pixel buffer, but does not yet write pixel data -- callers that
+     * need to bail out early on allocation failure (see SpriteClassifier)
+     * should catch OutOfMemoryError/IllegalArgumentException around this call
+     * before proceeding to {@link #packPixels}.
+     */
+    public static SpriteLayoutTable allocate(List<SpriteContents> sprites) {
+        int count = sprites.size();
+        int[] widths = new int[count];
+        int[] heights = new int[count];
+        int[] srcOffsets = new int[count];
+        long totalPixelBytes = 0L;
+        for (int i = 0; i < count; i++) {
+            int width = sprites.get(i).width();
+            int height = sprites.get(i).height();
+            widths[i] = width;
+            heights[i] = height;
+            srcOffsets[i] = (int) totalPixelBytes;
+            totalPixelBytes += (long) width * height * 4;
+        }
+        ByteBuffer pixels = ByteBuffer.allocateDirect((int) totalPixelBytes).order(ByteOrder.LITTLE_ENDIAN);
+        return new SpriteLayoutTable(widths, heights, srcOffsets, pixels);
+    }
+
     @SuppressWarnings("unused")
     public int width(int index) {
         return widths[index];
@@ -63,31 +88,6 @@ public final class SpriteLayoutTable {
             inputs.add(new NativeFamilyDetector.SpriteInput(srcOffsets[i], widths[i], heights[i], 0, 0, false));
         }
         return inputs;
-    }
-
-    /**
-     * Computes the layout (widths/heights/srcOffsets) and allocates the
-     * direct pixel buffer, but does not yet write pixel data -- callers that
-     * need to bail out early on allocation failure (see SpriteClassifier)
-     * should catch OutOfMemoryError/IllegalArgumentException around this call
-     * before proceeding to {@link #packPixels}.
-     */
-    public static SpriteLayoutTable allocate(List<SpriteContents> sprites) {
-        int count = sprites.size();
-        int[] widths = new int[count];
-        int[] heights = new int[count];
-        int[] srcOffsets = new int[count];
-        long totalPixelBytes = 0L;
-        for (int i = 0; i < count; i++) {
-            int width = sprites.get(i).width();
-            int height = sprites.get(i).height();
-            widths[i] = width;
-            heights[i] = height;
-            srcOffsets[i] = (int) totalPixelBytes;
-            totalPixelBytes += (long) width * height * 4;
-        }
-        ByteBuffer pixels = ByteBuffer.allocateDirect((int) totalPixelBytes).order(ByteOrder.LITTLE_ENDIAN);
-        return new SpriteLayoutTable(widths, heights, srcOffsets, pixels);
     }
 
     /**

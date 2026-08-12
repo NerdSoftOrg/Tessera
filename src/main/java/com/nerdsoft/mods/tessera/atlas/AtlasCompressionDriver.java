@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.nerdsoft.mods.tessera.cache.AtlasCache;
 import com.nerdsoft.mods.tessera.compress.*;
 import com.nerdsoft.mods.tessera.config.Config;
+import com.nerdsoft.mods.tessera.gui.DebugOverlay;
 import com.nerdsoft.mods.tessera.jni.NativeLibraryLoader;
 import com.nerdsoft.mods.tessera.vram.VramBudgetEngine;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -48,6 +49,7 @@ import java.util.Optional;
  * {@link SplitAtlasManager#beginSplitStitch}/
  * {@link SplitAtlasManager#applyPendingSplitStitch}).
  */
+@SuppressWarnings("JavadocReference")
 public final class AtlasCompressionDriver {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/AtlasCompressionDriver");
@@ -300,6 +302,54 @@ public final class AtlasCompressionDriver {
             return -1;
         }
 
+        // Per-atlas GL debug group (added because debug.log kept showing
+        // GL_INVALID_OPERATION as "in (null)" with no attributable call
+        // site, making BC1's opaque-atlas errors indistinguishable from
+        // BC7's alpha-atlas errors in the log). Every GL call between
+        // push/pop below -- including any async debug messages the driver
+        // emits for them -- is now tagged with this atlas's own location
+        // string. GL_DEBUG_SOURCE_APPLICATION is the correct source
+        // constant for a marker inserted by application/mod code (as
+        // opposed to GL_DEBUG_SOURCE_API, reserved for the driver's own
+        // generated messages). NVIDIA/AMD both echo
+        // the group string back in subsequent messages until the matching
+        // pop; Intel's Windows driver (this project's actual target
+        // hardware per debug.log's "Intel(R) Iris(R) Xe Graphics") is
+        // known to be inconsistent about honoring this on some builds --
+        // UNVERIFIED whether it does on the specific driver version in
+        // that log. Pushing the group is harmless when unsupported/
+        // ignored (falls back to exactly today's "in (null)" messages,
+        // no regression) and costs nothing when it is honored, so there
+        // is no downside to doing it unconditionally.
+        String debugGroupLabel = "tessera:upload:" + compressed.atlasLocation();
+        GL43.glPushDebugGroup(GL43.GL_DEBUG_SOURCE_APPLICATION, 0, debugGroupLabel);
+        try {
+            return tessera$uploadInner(textureId, compressed);
+        } finally {
+            GL43.glPopDebugGroup();
+
+            // One-shot, non-looping poll -- deliberately NOT the flood-
+            // amplifying spin loop the removed tessera$flushGlErrors() was
+            // (see uploadCompressedLevel's own doc comment on why that
+            // was wrong). A single call here produces at most one log
+            // line per upload() invocation (there are only ever a
+            // handful of these per reload, one per atlas), so this cannot
+            // recreate the multi-thousand-line flood the way polling
+            // inside a per-sprite or per-block loop would. This does NOT
+            // replace the async GLDebugMessageCallback as the primary
+            // error-reporting mechanism -- that is untouched and is what
+            // actually identifies *which* GL call failed; this is purely
+            // a "did upload() as a whole leave any error flagged" signal,
+            // logged at DEBUG so it stays out of the way by default.
+            int trailingError = GL11.glGetError();
+            if (trailingError != GL11.GL_NO_ERROR) {
+                LOGGER.debug("GL error {} flagged at some point during {} (see the async GlDebug messages logged around this atlas's upload for the specific failing call).",
+                        trailingError, debugGroupLabel);
+            }
+        }
+    }
+
+    private static long tessera$uploadInner(int textureId, CompressedAtlas compressed) {
         RenderSystem.bindTexture(textureId);
 
         // requestedMaxLevel is the same maxMipLevel vanilla's own
@@ -317,6 +367,14 @@ public final class AtlasCompressionDriver {
         int maxAllocatedLevel = compressed.requestedMaxLevel();
 
         long totalResidentBytes = 0L;
+        // Sum of each uploaded level's own uncompressed RGBA8 footprint
+        // (width*height*4), NOT just the base level -- a full mip chain's
+        // uncompressed baseline is the same geometric-series sum used by
+        // estimateFullMipChainBytes, so tallying per-level here rather
+        // than assuming level 0 alone keeps the DebugOverlay's "saved MB"
+        // figure consistent with what vanilla's own uncompressed upload
+        // would actually have resident for the same level count.
+        long totalUncompressedBytes = 0L;
         int lastUploadedLevel = -1;
 
         for (CompressedLevel level : compressed.levels()) {
@@ -331,6 +389,7 @@ public final class AtlasCompressionDriver {
                 break;
             }
             totalResidentBytes += level.compressedBlocks().remaining();
+            totalUncompressedBytes += (long) level.width() * level.height() * 4;
             lastUploadedLevel = level.level();
         }
 
@@ -346,6 +405,22 @@ public final class AtlasCompressionDriver {
             LOGGER.info("Atlas {} mip chain stopped early at level {} of {} requested.",
                     compressed.atlasLocation(), lastUploadedLevel, compressed.requestedMaxLevel());
         }
+
+        // Feeds the F3 debug overlay (see DebugOverlay#recordCompression).
+        // This call site did not exist before this fix: the overlay's
+        // isCompressedAtlasActive flag and byte counters had zero
+        // producers anywhere in the codebase (recordCompression/
+        // recordBucketCompression were dead code, leftover from the
+        // retired SpriteLoaderMixin -- see that method's own stale
+        // doc-comment reference in Tessera#onAtlasStitched), so the
+        // overlay printed "Compression: DISABLED" unconditionally on
+        // every frame regardless of whether compression actually
+        // succeeded. upload() succeeding past this point is exactly the
+        // "compression is active and resident" signal the overlay needs.
+        long savedBytes = totalUncompressedBytes - totalResidentBytes;
+        DebugOverlay.recordCompression(compressed.atlasLocation().toString(), savedBytes, totalResidentBytes);
+        DebugOverlay.recordBucketCompression(
+                compressed.atlasLocation().toString(), compressed.target().name(), savedBytes, totalResidentBytes);
 
         return totalResidentBytes;
     }
@@ -446,6 +521,20 @@ public final class AtlasCompressionDriver {
             cacheInstance = new AtlasCache(FMLPaths.GAMEDIR.get().resolve(Config.CACHE_DIRECTORY.get()));
         }
         return cacheInstance;
+    }
+
+    /**
+     * Drops the memoized {@link AtlasCache}, forcing the next {@link #cache()}
+     * call to re-read {@link Config#CACHE_DIRECTORY} and rebuild it against
+     * the current value. Without this, {@code cacheInstance} stays pinned to
+     * whatever directory was configured the first time any reload needed the
+     * cache, for the rest of the game session -- changing
+     * {@code cacheDirectory} in the settings screen would silently do
+     * nothing until restart. Called from {@code Tessera}'s config-reload
+     * listener.
+     */
+    public static synchronized void invalidateCache() {
+        cacheInstance = null;
     }
 
     /**

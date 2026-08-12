@@ -12,9 +12,6 @@ public final class MipChainBuilder {
     private MipChainBuilder() {
     }
 
-    public record MipLevel(int width, int height, ByteBuffer rgba8) {
-    }
-
     public static List<MipLevel> build(ByteBuffer baseRgba8, int baseWidth, int baseHeight, int maxLevel) {
         if (maxLevel <= 0) {
             return List.of(new MipLevel(baseWidth, baseHeight, baseRgba8));
@@ -44,5 +41,8 @@ public final class MipChainBuilder {
             wire.position(wire.position() + levelBuffer.remaining());
         }
         return levels;
+    }
+
+    public record MipLevel(int width, int height, ByteBuffer rgba8) {
     }
 }

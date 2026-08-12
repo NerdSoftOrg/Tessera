@@ -37,7 +37,7 @@ import java.util.Map;
  */
 // Compatibility for 1.21
 @SuppressWarnings("removal")
-@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
+@EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.MOD)
 public final class ModelBakingHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/ModelBakingHandler");

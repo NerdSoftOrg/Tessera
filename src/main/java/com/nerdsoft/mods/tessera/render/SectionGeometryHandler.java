@@ -6,6 +6,7 @@ import com.nerdsoft.mods.tessera.atlas.AtlasSplitTarget;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -28,54 +29,6 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Compile-side counterpart to {@link ModelWrapper}: walks every
- * block in a section being (re)compiled, and for any block whose model
- * reported Tessera-routed quads (the ones {@link ModelWrapper}
- * suppressed from vanilla's own {@code solid()}/{@code cutoutMipped()}
- * output), builds vertex data for those quads and stores it via
- * {@link SectionGeometryStore} for {@link LevelRenderHandler}
- * to draw later.
- *
- * <h2>Confirmed vs. unconfirmed in this class</h2>
- * The event entry point itself -- {@code AddSectionGeometryEvent}'s
- * constructor/fields ({@code getSectionOrigin()}, {@code getLevel()}), the
- * {@code addRenderer(AdditionalSectionRenderer)} registration method, and
- * the documented threading contract (event fires main-thread, registered
- * renderer runs on the compile thread) -- are fully confirmed against
- * NeoForge's own 1.21.1-21.1.248 javadoc (the exact build this project
- * targets, confirmed via this project's own debug.log crash trace earlier
- * in this work).
- *
- * <p><strong>UNVERIFIED:</strong> {@code SectionRenderingContext}'s full
- * method surface beyond {@code getOrCreateChunkBuffer(RenderType)}
- * (confirmed restricted to {@code RenderType.chunkBufferLayers()}, and
- * therefore not usable for Tessera's own atlas-bound geometry -- see
- * {@link ModelWrapper}'s doc for the three-way confirmation of that
- * restriction) could not be enumerated from available sources during this
- * session. This handler therefore does not use
- * {@code SectionRenderingContext} for vertex output at all -- it builds
- * raw vertex bytes manually (see {@link #tessera$bakeVertices}) and hands
- * them directly to {@link SectionGeometryStore}, bypassing
- * {@code SectionRenderingContext} entirely except as the signal that a
- * rebuild is happening. If {@code SectionRenderingContext} turns out to
- * expose a lower-level raw-buffer-write method, routing through it instead
- * of this class's manual packing could reduce allocation further --
- * flagged as a possible follow-up, not implemented here since its
- * existence and shape are unconfirmed.
- *
- * <h2>Per-block iteration cost</h2>
- * This handler re-derives each block's quads by calling
- * {@code BakedModel.getQuads} directly (not through
- * {@code TesseraModelWrapper}, to avoid the suppression logic firing
- * twice -- see {@link #tessera$collectQuadsForBlock}), for every block
- * position in the section. This mirrors the same per-block cost vanilla's
- * own section compiler already pays for every section -- Tessera is not
- * adding a new O(blocks-per-section) pass, it is closely paralleling one
- * vanilla already does, on the same already-off-main-thread compile
- * worker.
- */
-// Compatibility for 1.21
 @SuppressWarnings("removal")
 @EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
 public final class SectionGeometryHandler {
@@ -105,7 +58,10 @@ public final class SectionGeometryHandler {
         // (the contract concerns non-thread-safe *client-side caches*,
         // not the level's own block data access, which is designed to be
         // read from worker threads for exactly this kind of use).
-        event.addRenderer(context -> tessera$buildSectionGeometry(sectionOrigin, level));
+        event.addRenderer(context -> {
+            context.getOrCreateChunkBuffer(RenderType.solid());
+            tessera$buildSectionGeometry(sectionOrigin, level);
+        });
     }
 
     /**
@@ -117,7 +73,7 @@ public final class SectionGeometryHandler {
      * {@link SectionGeometryStore#putSection}.
      */
     private static void tessera$buildSectionGeometry(BlockPos sectionOrigin, Level level) {
-        Map<AtlasSplitTarget, List<Float>> vertexFloatsByTarget = new EnumMap<>(AtlasSplitTarget.class);
+        Map<AtlasSplitTarget, List<Integer>> vertexIntsByTarget = new EnumMap<>(AtlasSplitTarget.class);
         Map<AtlasSplitTarget, Integer> quadCountByTarget = new EnumMap<>(AtlasSplitTarget.class);
 
         BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
@@ -138,23 +94,26 @@ public final class SectionGeometryHandler {
                     // than recomputed from cursor/sectionOrigin subtraction,
                     // since they're already exactly that value by
                     // construction of this loop.
-                    tessera$collectQuadsForBlock(model, state, x, y, z, random, vertexFloatsByTarget, quadCountByTarget);
+                    tessera$collectQuadsForBlock(model, state, x, y, z, random, vertexIntsByTarget, quadCountByTarget);
                 }
             }
         }
 
         int totalTesseraQuads = 0;
         for (AtlasSplitTarget target : AtlasSplitTarget.values()) {
-            List<Float> floats = vertexFloatsByTarget.get(target);
+            if (!target.eligible()) {
+                continue;
+            }
+            List<Integer> ints = vertexIntsByTarget.get(target);
             int quadCount = quadCountByTarget.getOrDefault(target, 0);
-            if (floats == null || quadCount == 0) {
+            if (ints == null || quadCount == 0) {
                 SectionGeometryStore.removeSectionTarget(sectionOrigin, target);
                 continue;
             }
 
-            ByteBuffer vertexData = ByteBuffer.allocateDirect(floats.size() * Float.BYTES).order(ByteOrder.nativeOrder());
-            for (float f : floats) {
-                vertexData.putFloat(f);
+            ByteBuffer vertexData = ByteBuffer.allocateDirect(ints.size() * Integer.BYTES).order(ByteOrder.nativeOrder());
+            for (int packed : ints) {
+                vertexData.putInt(packed);
             }
             vertexData.rewind();
 
@@ -164,7 +123,7 @@ public final class SectionGeometryHandler {
         }
 
         if (totalTesseraQuads > 0) {
-            LOGGER.debug("Section {}: compiled {} Tessera-routed quads.", sectionOrigin, totalTesseraQuads);
+            LOGGER.info("[Tessera-Debug] Section {}: compiled {} Tessera-routed quads.", sectionOrigin, totalTesseraQuads);
         }
     }
 
@@ -183,22 +142,22 @@ public final class SectionGeometryHandler {
      */
     private static void tessera$collectQuadsForBlock(
             BakedModel model, BlockState state, int relX, int relY, int relZ, RandomSource random,
-            Map<AtlasSplitTarget, List<Float>> vertexFloatsByTarget, Map<AtlasSplitTarget, Integer> quadCountByTarget
+            Map<AtlasSplitTarget, List<Integer>> vertexIntsByTarget, Map<AtlasSplitTarget, Integer> quadCountByTarget
     ) {
         for (RenderType layer : SUPPRESSIBLE_LAYERS) {
             for (Direction side : Direction.values()) {
                 List<BakedQuad> quads = model.getQuads(state, side, random, ModelData.EMPTY, layer);
-                tessera$collectQuads(quads, relX, relY, relZ, vertexFloatsByTarget, quadCountByTarget);
+                tessera$collectQuads(quads, relX, relY, relZ, vertexIntsByTarget, quadCountByTarget);
             }
             List<BakedQuad> unculled = model.getQuads(state, null, random, ModelData.EMPTY, layer);
-            tessera$collectQuads(unculled, relX, relY, relZ, vertexFloatsByTarget, quadCountByTarget);
+            tessera$collectQuads(unculled, relX, relY, relZ, vertexIntsByTarget, quadCountByTarget);
         }
     }
 
     @SuppressWarnings("resource")
     private static void tessera$collectQuads(
             List<BakedQuad> quads, int relX, int relY, int relZ,
-            Map<AtlasSplitTarget, List<Float>> vertexFloatsByTarget, Map<AtlasSplitTarget, Integer> quadCountByTarget
+            Map<AtlasSplitTarget, List<Integer>> vertexIntsByTarget, Map<AtlasSplitTarget, Integer> quadCountByTarget
     ) {
         for (BakedQuad quad : quads) {
             ResourceLocation spriteName = quad.getSprite().contents().name();
@@ -207,8 +166,18 @@ public final class SectionGeometryHandler {
                 continue;
             }
 
-            List<Float> floats = vertexFloatsByTarget.computeIfAbsent(target, t -> new ArrayList<>());
-            tessera$bakeVertices(quad, relX, relY, relZ, floats);
+            var atlas = TesseraClient.SPLIT_ATLAS_MANAGER.atlasFor(target);
+            if (atlas == null) {
+                continue;
+            }
+
+            TextureAtlasSprite tesseraSprite = atlas.getSprite(spriteName);
+            if (tesseraSprite == null) {
+                continue;
+            }
+
+            List<Integer> ints = vertexIntsByTarget.computeIfAbsent(target, t -> new ArrayList<>());
+            tessera$bakeVertices(quad, relX, relY, relZ, tesseraSprite, ints);
             quadCountByTarget.merge(target, 1, Integer::sum);
         }
     }
@@ -224,37 +193,25 @@ public final class SectionGeometryHandler {
      * from scratch, which would otherwise require duplicating logic from
      * vanilla's own {@code ModelBlockRenderer} (unconfirmed internals,
      * deliberately avoided per this project's established approach).
-     *
-     * <p>Position offset confirmed via two independent sources: Forge's
-     * own baked-model documentation states a {@code BakedQuad}'s vertex
-     * origin is the block's own bottom-northwest corner, in 0..1
-     * block-local space (i.e. not pre-offset to any world or section
-     * position); and a real, working mod (MinecraftByExample's
-     * {@code AltimeterBakedModel.java}) demonstrates the standard
-     * technique for translating baked quad positions -- reinterpreting
-     * each position int as a float via {@code Float.intBitsToFloat},
-     * adding the desired offset, and repacking via
-     * {@code Float.floatToRawIntBits} -- which is the same technique
-     * applied here. {@code relX}/{@code relY}/{@code relZ} are the
-     * section-relative block offset (0..15 per axis, matching
-     * {@link #tessera$buildSectionGeometry}'s own iteration), added
-     * directly to each vertex's position floats so the emitted geometry
-     * is correctly positioned within the section rather than overlapping
-     * at each block's own local origin.
-     *
-     * <p>{@code DefaultVertexFormat.BLOCK}'s position element is
-     * confirmed to be the first element in the format (matching every
-     * vertex format convention seen across Minecraft's rendering history,
-     * where position is always emitted first) -- i.e. floats at index 0,
-     * 1, 2 of each 8-int-per-vertex block are X, Y, Z respectively. The
-     * exact byte offsets of the remaining elements (color, UV, overlay,
-     * lightmap, normal) were not independently re-verified here since
-     * they are copied through unmodified either way and this method does
-     * not need to interpret them, only the position floats.
      */
-    private static void tessera$bakeVertices(BakedQuad quad, int relX, int relY, int relZ, List<Float> outFloats) {
+    private static void tessera$bakeVertices(BakedQuad quad, int relX, int relY, int relZ, TextureAtlasSprite tesseraSprite, List<Integer> outInts) {
         int[] vertexData = quad.getVertices();
         int intsPerVertex = vertexData.length / 4;
+
+        TextureAtlasSprite sourceSprite = quad.getSprite();
+        float sourceU0 = sourceSprite.getU0();
+        float sourceU1 = sourceSprite.getU1();
+        float sourceV0 = sourceSprite.getV0();
+        float sourceV1 = sourceSprite.getV1();
+        float sourceUSpan = sourceU1 - sourceU0;
+        float sourceVSpan = sourceV1 - sourceV0;
+
+        float destU0 = tesseraSprite.getU0();
+        float destU1 = tesseraSprite.getU1();
+        float destV0 = tesseraSprite.getV0();
+        float destV1 = tesseraSprite.getV1();
+        float destUSpan = destU1 - destU0;
+        float destVSpan = destV1 - destV0;
 
         for (int vertex = 0; vertex < 4; vertex++) {
             int base = vertex * intsPerVertex;
@@ -262,12 +219,20 @@ public final class SectionGeometryHandler {
             float y = Float.intBitsToFloat(vertexData[base + 1]) + relY;
             float z = Float.intBitsToFloat(vertexData[base + 2]) + relZ;
 
-            outFloats.add(x);
-            outFloats.add(y);
-            outFloats.add(z);
-            for (int i = 3; i < intsPerVertex; i++) {
-                outFloats.add(Float.intBitsToFloat(vertexData[base + i]));
-            }
+            outInts.add(Float.floatToRawIntBits(x));
+            outInts.add(Float.floatToRawIntBits(y));
+            outInts.add(Float.floatToRawIntBits(z));
+            outInts.add(vertexData[base + 3]);
+
+            float rawU = Float.intBitsToFloat(vertexData[base + 4]);
+            float rawV = Float.intBitsToFloat(vertexData[base + 5]);
+            float localU = sourceUSpan == 0f ? 0f : (rawU - sourceU0) / sourceUSpan;
+            float localV = sourceVSpan == 0f ? 0f : (rawV - sourceV0) / sourceVSpan;
+            outInts.add(Float.floatToRawIntBits(destU0 + localU * destUSpan));
+            outInts.add(Float.floatToRawIntBits(destV0 + localV * destVSpan));
+
+            outInts.add(vertexData[base + 6]);
+            outInts.add(vertexData[base + 7]);
         }
     }
 }

@@ -5,29 +5,18 @@
 // endpoints + sixteen 2-bit indices), matching the standard DXT1 bitstream
 // layout GL_COMPRESSED_RGB_S3TC_DXT1_EXT expects.
 //
-// Encoding method: endpoint selection via min/max color along the block's
-// own principal axis is the well-established "range fit" BC1 technique
-// (used as the fast path in most production encoders, including squish
-// and stb_dxt's non-exhaustive mode) -- deliberately not attempting
-// cluster-fit/exhaustive search, which is what makes CPU encoders like
-// bc7enc_rdo slower but higher quality. This trades a small amount of
-// quality for the large speed win that justifies moving to the GPU at
-// all; if visual banding is observed on gradient-heavy opaque textures,
-// the fix is a better endpoint-selection method in this shader, not a
-// change to the surrounding Java/JNI plumbing.
-//
 // Workgroup size 8x8 texels = one invocation handles one 4x4 block, so
 // dispatch groups are sized in units of 32x32 source texels
 // (8 blocks-per-workgroup-dimension * 4 texels-per-block).
 
 layout (local_size_x = 8, local_size_y = 8) in;
 
-layout (set = 0, binding = 0, rgba8) uniform readonly image2D sourceImage;
+layout (binding = 0, rgba8) uniform readonly image2D sourceImage;
 
 // Output: one uvec2 per 4x4 block (8 bytes = BC1 block size), tightly
 // packed in row-major block order matching glCompressedTexImage2D's
 // expected layout (block (0,0), (1,0), (2,0), ... then next row).
-layout (set = 0, binding = 1, std430) buffer OutputBlocks {
+layout (binding = 1, std430) buffer OutputBlocks {
     uvec2 blocks[];
 };
 
@@ -41,10 +30,10 @@ uint packRgb565(vec3 color) {
     return (r << 11) | (g << 5) | b;
 }
 
-vec3 unpackRgb565(uint packed) {
-    float r = float((packed >> 11) & 0x1Fu) / 31.0;
-    float g = float((packed >> 5) & 0x3Fu) / 63.0;
-    float b = float(packed & 0x1Fu) / 31.0;
+vec3 unpackRgb565(uint packedColor) {
+    float r = float((packedColor >> 11) & 0x1Fu) / 31.0;
+    float g = float((packedColor >> 5) & 0x3Fu) / 63.0;
+    float b = float(packedColor & 0x1Fu) / 31.0;
     return vec3(r, g, b);
 }
 

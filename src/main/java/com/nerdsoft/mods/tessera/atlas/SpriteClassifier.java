@@ -17,12 +17,6 @@ public final class SpriteClassifier {
     private SpriteClassifier() {
     }
 
-    public record ClassificationResult(Map<SpriteBucket, List<SpriteContents>> buckets) {
-        public List<SpriteContents> bucket(SpriteBucket bucket) {
-            return buckets.getOrDefault(bucket, List.of());
-        }
-    }
-
     public static ClassificationResult classify(List<SpriteContents> allSprites) {
         Map<SpriteBucket, List<SpriteContents>> buckets = new EnumMap<>(SpriteBucket.class);
         for (SpriteBucket bucket : SpriteBucket.values()) {
@@ -93,5 +87,11 @@ public final class SpriteClassifier {
             return null;
         }
         return result.alphaShapes();
+    }
+
+    public record ClassificationResult(Map<SpriteBucket, List<SpriteContents>> buckets) {
+        public List<SpriteContents> bucket(SpriteBucket bucket) {
+            return buckets.getOrDefault(bucket, List.of());
+        }
     }
 }
