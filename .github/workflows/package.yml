@@ -86,6 +86,12 @@ jobs:
           restore-keys: |
             cargo-${{ matrix.platform_dir }}-
 
+      - name: Fetch vendored bc7enc_rdo sources with patches
+        working-directory: native/vendor/bc7enc_rdo
+        run: |
+          chmod +x fetch.sh
+          ./fetch.sh
+
       - name: cargo build --release
         working-directory: native/bridge
         run: |

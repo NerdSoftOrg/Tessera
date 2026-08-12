@@ -25,28 +25,6 @@ for file in "${FILES[@]}"; do
     cp "$WORK_DIR/$file" "$SCRIPT_DIR/$file"
 done
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 patch_ert_h() {
     local file="$SCRIPT_DIR/ert.h"
     if grep -q '#include <cstdint>' "$file"; then
