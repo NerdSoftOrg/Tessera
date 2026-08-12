@@ -1,7 +1,7 @@
 package com.nerdsoft.mods.tessera.datagen;
 
-import com.nerdsoft.mods.tessera.datagen.lang.ModEnUsLanguageProvider;
-import com.nerdsoft.mods.tessera.datagen.lang.ModEsEsLanguageProvider;
+import com.nerdsoft.mods.tessera.datagen.lang.EnUsLanguageProvider;
+import com.nerdsoft.mods.tessera.datagen.lang.EsEsLanguageProvider;
 import net.minecraft.data.DataGenerator;
 import net.minecraft.data.PackOutput;
 import net.neoforged.bus.api.IEventBus;
@@ -20,7 +20,7 @@ public final class DataGenerators {
         DataGenerator generator = event.getGenerator();
         PackOutput packOutput = generator.getPackOutput();
 
-        generator.addProvider(event.includeClient(), new ModEnUsLanguageProvider(packOutput));
-        generator.addProvider(event.includeClient(), new ModEsEsLanguageProvider(packOutput));
+        generator.addProvider(event.includeClient(), new EnUsLanguageProvider(packOutput));
+        generator.addProvider(event.includeClient(), new EsEsLanguageProvider(packOutput));
     }
 }

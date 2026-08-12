@@ -67,7 +67,9 @@ public final class NativeLibraryLoader {
             return null;
         }
         String libraryFileName = libraryFileNameFor(platformDir);
-        return "/natives/" + platformDir + "/" + libraryFileName;
+
+        // src/main/resources/assets/tessera/natives/<platform>/<lib>
+        return "/assets/tessera/natives/" + platformDir + "/" + libraryFileName;
     }
 
     private static String libraryFileNameFor(String platformDir) {

@@ -1,6 +1,7 @@
 package com.nerdsoft.mods.tessera.atlas;
 
 import com.nerdsoft.mods.tessera.compress.Bc1ComputeSupport;
+import com.nerdsoft.mods.tessera.compress.Bc1TextureFormatSupport;
 import com.nerdsoft.mods.tessera.compress.CompressionPipeline;
 import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.renderer.texture.SpriteContents;
@@ -81,7 +82,7 @@ import java.util.concurrent.Executor;
  * exact list rather than re-discovering it via a second, independent
  * reload pass that would need its own model-material enumeration.
  */
-public final class TesseraSplitAtlasManager implements PreparableReloadListener {
+public final class SplitAtlasManager implements PreparableReloadListener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/SplitAtlasManager");
 
@@ -117,6 +118,7 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
         return tessera$spriteRouting.get(spriteName);
     }
 
+    @SuppressWarnings("DataFlowIssue")
     @Override
     public @NotNull CompletableFuture<Void> reload(
             PreparationBarrier barrier, @NotNull ResourceManager resourceManager,
@@ -308,7 +310,7 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
                     null);
         }
 
-        if (Bc1ComputeSupport.isSupported()) {
+        if (Bc1ComputeSupport.isSupported() && Bc1TextureFormatSupport.isSupported()) {
             ByteBuffer baseRgba8 = AtlasCompressionDriver.assembleAtlasBuffer(
                     AtlasSplitTarget.OPAQUE.name(), preparations.regions().values(), preparations.width(), preparations.height());
             if (baseRgba8 == null) {
@@ -318,7 +320,7 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
                         new AtlasCompressionDriver.CompressedAtlas(AtlasSplitTarget.OPAQUE.atlasLocation(), CompressionPipeline.Target.BC1, List.of(), preparations.mipLevel()),
                         null);
             }
-            // Deferred to the render thread -- see tessera$applyOnRenderThread.
+            // Deferred to the render thread, see tessera$applyOnRenderThread.
             return new OpaqueBackgroundResult(null, baseRgba8);
         }
 
@@ -380,6 +382,7 @@ public final class TesseraSplitAtlasManager implements PreparableReloadListener 
         return map;
     }
 
+    @SuppressWarnings("DataFlowIssue")
     private SpriteLoader.Preparations tessera$emptyPreparations() {
         return new SpriteLoader.Preparations(0, 0, 0, null, Map.of(), CompletableFuture.completedFuture(null));
     }

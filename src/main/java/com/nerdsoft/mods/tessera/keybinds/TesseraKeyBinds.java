@@ -2,7 +2,7 @@ package com.nerdsoft.mods.tessera.keybinds;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.nerdsoft.mods.tessera.Tessera;
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
+import com.nerdsoft.mods.tessera.config.Config;
 import com.nerdsoft.mods.tessera.mixin.KeyboardHandlerAccessor;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
@@ -31,9 +31,9 @@ public final class TesseraKeyBinds {
 
             ((KeyboardHandlerAccessor) mc.keyboardHandler).setHandledDebugKey(true);
 
-            boolean newState = !TesseraConfig.SHOW_EXTENDED_DEBUG_BREAKDOWN.get();
-            TesseraConfig.SHOW_EXTENDED_DEBUG_BREAKDOWN.set(newState);
-            TesseraConfig.SHOW_EXTENDED_DEBUG_BREAKDOWN.save();
+            boolean newState = !Config.SHOW_EXTENDED_DEBUG_BREAKDOWN.get();
+            Config.SHOW_EXTENDED_DEBUG_BREAKDOWN.set(newState);
+            Config.SHOW_EXTENDED_DEBUG_BREAKDOWN.save();
 
             Component statusComponent = newState
                     ? Component.translatable("debug.state.shown")

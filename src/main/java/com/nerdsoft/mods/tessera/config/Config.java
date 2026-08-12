@@ -2,7 +2,7 @@ package com.nerdsoft.mods.tessera.config;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-public final class TesseraConfig {
+public final class Config {
 
     public static final ModConfigSpec SPEC;
 
@@ -106,6 +106,6 @@ public final class TesseraConfig {
         SPEC = builder.build();
     }
 
-    private TesseraConfig() {
+    private Config() {
     }
 }

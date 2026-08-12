@@ -2,11 +2,9 @@ package com.nerdsoft.mods.tessera.atlas;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.nerdsoft.mods.tessera.cache.AtlasCache;
-import com.nerdsoft.mods.tessera.compress.Bc1ComputeEncoder;
-import com.nerdsoft.mods.tessera.compress.Bc1ComputeSupport;
-import com.nerdsoft.mods.tessera.compress.Bc7GpuSupport;
-import com.nerdsoft.mods.tessera.compress.CompressionPipeline;
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
+import com.nerdsoft.mods.tessera.compress.*;
+import com.nerdsoft.mods.tessera.config.Config;
+import com.nerdsoft.mods.tessera.jni.NativeLibraryLoader;
 import com.nerdsoft.mods.tessera.vram.VramBudgetEngine;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
@@ -26,7 +24,7 @@ import java.util.Optional;
  * Generic BC1/BC7 compression + upload driver, extracted from the old
  * {@code SpriteLoaderMixin}'s per-bucket compression path (now disabled --
  * see {@code tessera.mixins.json}) so it can be reused against
- * {@link TesseraSplitAtlasManager}'s two independent
+ * {@link SplitAtlasManager}'s two independent
  * {@code TextureAtlas} instances without depending on the retired
  * {@code SpriteBucket}/{@code SpriteAtlasRouting} bucket-hack types.
  *
@@ -47,8 +45,8 @@ import java.util.Optional;
  * {@link #compress} on the same background executor
  * {@code SpriteLoader.stitch()} was already given, and only call
  * {@link #upload} once back on the render thread (see
- * {@link TesseraSplitAtlasManager#beginSplitStitch}/
- * {@link TesseraSplitAtlasManager#applyPendingSplitStitch}).
+ * {@link SplitAtlasManager#beginSplitStitch}/
+ * {@link SplitAtlasManager#applyPendingSplitStitch}).
  */
 public final class AtlasCompressionDriver {
 
@@ -80,6 +78,16 @@ public final class AtlasCompressionDriver {
     public static ByteBuffer assembleAtlasBuffer(
             String label, Collection<TextureAtlasSprite> regions, int atlasWidth, int atlasHeight
     ) {
+
+        // Guard mirrors compress(): don't cross the JNI boundary, and don't pay for the
+        // pixel-buffer allocation/copy below, when the bridge never loaded (or is disabled).
+        // Without this check, NativeFamilyDetector.detect() calls straight into
+        // NativeBridge.detectFamiliesAndAssemble and throws UnsatisfiedLinkError instead
+        // of the clean vanilla-atlas fallback this method's own docstring promises.
+        if (Config.DISABLE_NATIVE_COMPRESSION.get() || !NativeLibraryLoader.isAvailable()) {
+            return null;
+        }
+
         long totalPixelBytes = 0L;
         int[] widths = new int[regions.size()];
         int[] heights = new int[regions.size()];
@@ -122,7 +130,7 @@ public final class AtlasCompressionDriver {
         pixels.rewind();
 
         NativeFamilyDetector.DetectionResult result = NativeFamilyDetector.detect(
-                pixels, spriteInputs, atlasWidth, atlasHeight, TesseraConfig.DEDUP_SIMILARITY_THRESHOLD.get());
+                pixels, spriteInputs, atlasWidth, atlasHeight, Config.DEDUP_SIMILARITY_THRESHOLD.get());
         if (result == null) {
             return null;
         }
@@ -150,24 +158,6 @@ public final class AtlasCompressionDriver {
         int alignedHeight = (height + 3) & ~3;
         long baseLevelBytes = (long) (alignedWidth / 4) * (alignedHeight / 4) * target.bytesPerBlock();
         return (baseLevelBytes * 4) / 3;
-    }
-
-    /**
-     * Result of the CPU-side compression phase: every successfully
-     * compressed mip level, ready to be uploaded. Carries no GL state and
-     * touches no GL calls to produce -- safe to build entirely on a
-     * background executor thread. {@link #upload} is the only part of
-     * this pipeline that must run on the render thread.
-     */
-    public record CompressedAtlas(
-            ResourceLocation atlasLocation,
-            CompressionPipeline.Target target,
-            List<CompressedLevel> levels,
-            int requestedMaxLevel
-    ) {
-    }
-
-    public record CompressedLevel(int level, int width, int height, ByteBuffer compressedBlocks) {
     }
 
     /**
@@ -384,6 +374,23 @@ public final class AtlasCompressionDriver {
             return false;
         }
 
+        // Last-line defense, independent of which upstream path produced
+        // these blocks (CompressionPipeline#compress on the CPU side,
+        // Bc1ComputeEncoder#encode on the GPU-compute side, or any future
+        // caller): never issue glCompressedTexImage2D with an S3TC enum
+        // the driver hasn't advertised. This is what was previously
+        // missing -- BC1ComputeSupport/isBc1NativeAvailable both gate on
+        // unrelated capabilities, so this call could still fire on a
+        // driver without GL_EXT_texture_compression_s3tc and leave the
+        // texture's storage for this level undefined (GL_INVALID_OPERATION,
+        // then intermittently-invisible block textures depending on how
+        // the driver happens to handle the resulting incomplete image).
+        if (target == CompressionPipeline.Target.BC1 && !Bc1TextureFormatSupport.isSupported()) {
+            LOGGER.warn("Atlas {} BC1 upload skipped: driver does not advertise GL_EXT_texture_compression_s3tc.",
+                    atlasLocation);
+            return false;
+        }
+
         int glInternalFormat = target == CompressionPipeline.Target.BC1
                 ? EXTTextureCompressionS3TC.GL_COMPRESSED_RGB_S3TC_DXT1_EXT
                 : GL42.GL_COMPRESSED_RGBA_BPTC_UNORM;
@@ -436,8 +443,26 @@ public final class AtlasCompressionDriver {
 
     private static synchronized AtlasCache cache() {
         if (cacheInstance == null) {
-            cacheInstance = new AtlasCache(FMLPaths.GAMEDIR.get().resolve(TesseraConfig.CACHE_DIRECTORY.get()));
+            cacheInstance = new AtlasCache(FMLPaths.GAMEDIR.get().resolve(Config.CACHE_DIRECTORY.get()));
         }
         return cacheInstance;
+    }
+
+    /**
+     * Result of the CPU-side compression phase: every successfully
+     * compressed mip level, ready to be uploaded. Carries no GL state and
+     * touches no GL calls to produce -- safe to build entirely on a
+     * background executor thread. {@link #upload} is the only part of
+     * this pipeline that must run on the render thread.
+     */
+    public record CompressedAtlas(
+            ResourceLocation atlasLocation,
+            CompressionPipeline.Target target,
+            List<CompressedLevel> levels,
+            int requestedMaxLevel
+    ) {
+    }
+
+    public record CompressedLevel(int level, int width, int height, ByteBuffer compressedBlocks) {
     }
 }

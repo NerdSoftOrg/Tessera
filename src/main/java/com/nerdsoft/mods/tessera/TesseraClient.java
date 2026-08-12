@@ -1,6 +1,6 @@
 package com.nerdsoft.mods.tessera;
 
-import com.nerdsoft.mods.tessera.atlas.TesseraSplitAtlasManager;
+import com.nerdsoft.mods.tessera.atlas.SplitAtlasManager;
 import net.minecraft.resources.ResourceLocation;
 
 /**
@@ -8,7 +8,7 @@ import net.minecraft.resources.ResourceLocation;
  */
 public final class TesseraClient {
 
-    public static final TesseraSplitAtlasManager SPLIT_ATLAS_MANAGER = new TesseraSplitAtlasManager();
+    public static final SplitAtlasManager SPLIT_ATLAS_MANAGER = new SplitAtlasManager();
 
     private static final ThreadLocal<ResourceLocation> ACTIVE_QUAD_SPRITE = new ThreadLocal<>();
 

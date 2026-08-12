@@ -24,7 +24,7 @@ import java.util.Set;
  * exactly {@code RenderType.chunkBufferLayers()} and asks each block's
  * model for quads per layer, per the confirmed contract documented at
  * {@code docs.neoforged.net/docs/1.21.1/resources/client/models/bakedmodel})
- * gets nothing for that block/layer/quad. {@link TesseraSectionGeometryHandler}
+ * gets nothing for that block/layer/quad. {@link SectionGeometryHandler}
  * is what actually draws that geometry instead, via
  * {@code AddSectionGeometryEvent} -- see that class's doc for why this
  * split is required and how the two halves stay in sync.
@@ -53,11 +53,11 @@ import java.util.Set;
  * still render normally through vanilla's own buffer. Only quads that are
  * Tessera-routed are removed from what {@code getQuads} returns.
  */
-public final class TesseraModelWrapper extends BakedModelWrapper<BakedModel> {
+public final class ModelWrapper extends BakedModelWrapper<BakedModel> {
 
     private static final Set<RenderType> SUPPRESSIBLE_LAYERS = Set.of(RenderType.solid(), RenderType.cutoutMipped(), RenderType.cutout());
 
-    public TesseraModelWrapper(BakedModel original) {
+    public ModelWrapper(BakedModel original) {
         super(original);
     }
 

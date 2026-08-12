@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Map;
 
 /**
- * Applies {@link TesseraModelWrapper} to every block model, via the
+ * Applies {@link ModelWrapper} to every block model, via the
  * confirmed {@code ModelEvent.ModifyBakingResult} event and
  * {@code event.getBakingResult().blockStateModels().computeIfPresent(...)}
  * pattern documented by NeoForged.
@@ -25,7 +25,7 @@ import java.util.Map;
  * stitching are both async phases of the same resource reload, and their
  * relative ordering is not confirmed. Rather than risk wrapping too few
  * models based on stale/absent routing data, every block model is wrapped;
- * {@link TesseraModelWrapper} itself checks the routing table lazily, per
+ * {@link ModelWrapper} itself checks the routing table lazily, per
  * call, at actual render/compile time (by which point the reload has fully
  * completed). The cost of wrapping an unaffected model is one extra
  * virtual-call indirection per {@code getQuads} call, not a correctness
@@ -38,11 +38,11 @@ import java.util.Map;
 // Compatibility for 1.21
 @SuppressWarnings("removal")
 @EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
-public final class TesseraModelBakingHandler {
+public final class ModelBakingHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/ModelBakingHandler");
 
-    private TesseraModelBakingHandler() {
+    private ModelBakingHandler() {
     }
 
     @SubscribeEvent
@@ -54,8 +54,8 @@ public final class TesseraModelBakingHandler {
             BakedModel originalModel = entry.getValue();
 
             // Prevent double-wrapping if another handler or reload triggered
-            if (!(originalModel instanceof TesseraModelWrapper)) {
-                entry.setValue(new TesseraModelWrapper(originalModel));
+            if (!(originalModel instanceof ModelWrapper)) {
+                entry.setValue(new ModelWrapper(originalModel));
                 wrapped++;
             }
         }

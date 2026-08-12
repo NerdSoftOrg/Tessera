@@ -49,7 +49,8 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config git
+          sudo apt-get install -y build-essential pkg-config git ca-certificates
+          sudo update-ca-certificates
 
       - name: Install aarch64 cross toolchain
         if: matrix.target == 'aarch64-unknown-linux-gnu'

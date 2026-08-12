@@ -18,7 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Draw-side counterpart to {@link TesseraSectionGeometryHandler}: once per
+ * Draw-side counterpart to {@link SectionGeometryHandler}: once per
  * frame, at {@code RenderLevelStageEvent.Stage.AFTER_SOLID_BLOCKS} and
  * {@code AFTER_CUTOUT_MIPPED_BLOCKS}, binds the corresponding Tessera
  * atlas and draws every stored section's accumulated geometry for that
@@ -53,7 +53,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p><strong>Persistent buffer caching:</strong> {@link #tessera$drawSection}
  * reuses a persistent GL buffer across frames via
- * {@link TesseraSectionGeometryStore.GpuBufferCache}, keyed on
+ * {@link SectionGeometryStore.GpuBufferCache}, keyed on
  * {@code CompiledSectionGeometry} object identity -- an earlier version of
  * this class created and destroyed a transient VBO on every section every
  * frame, which was correct but wasteful given this project's FPS goal.
@@ -64,13 +64,13 @@ import org.slf4j.LoggerFactory;
 // Compatibility for 1.21
 @SuppressWarnings("removal")
 @EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
-public final class TesseraLevelRenderHandler {
+public final class LevelRenderHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/LevelRenderHandler");
     private static volatile int tessera$sharedQuadIndexBuffer = -1;
     private static volatile int tessera$sharedQuadIndexBufferCapacity = 0;
 
-    private TesseraLevelRenderHandler() {
+    private LevelRenderHandler() {
     }
 
     @SuppressWarnings("resource")
@@ -99,7 +99,7 @@ public final class TesseraLevelRenderHandler {
         RenderSystem.enableDepthTest();
 
         int[] drawnSections = {0};
-        TesseraSectionGeometryStore.forEachSection(target, (sectionOrigin, geometry) ->
+        SectionGeometryStore.forEachSection(target, (sectionOrigin, geometry) ->
                 tessera$drawSection(sectionOrigin, geometry, camX, camY, camZ, event.getModelViewMatrix(), event.getProjectionMatrix(), drawnSections));
 
         RenderSystem.disableBlend();
@@ -111,7 +111,7 @@ public final class TesseraLevelRenderHandler {
 
     /**
      * Draws one section's geometry, reusing a persistent GL buffer across
-     * frames via {@link TesseraSectionGeometryStore.GpuBufferCache} rather
+     * frames via {@link SectionGeometryStore.GpuBufferCache} rather
      * than creating and destroying a transient VBO on every call -- this
      * replaces an earlier version of this method that did exactly that
      * (correct, but wasteful: allocate + upload + delete, every section,
@@ -133,10 +133,10 @@ public final class TesseraLevelRenderHandler {
      */
     @SuppressWarnings("unused")
     private static void tessera$drawSection(
-            BlockPos sectionOrigin, TesseraSectionGeometryStore.CompiledSectionGeometry geometry,
+            BlockPos sectionOrigin, SectionGeometryStore.CompiledSectionGeometry geometry,
             double camX, double camY, double camZ, Matrix4f modelViewMatrix, Matrix4f projectionMatrix, int[] drawnSections
     ) {
-        int vbo = TesseraSectionGeometryStore.GpuBufferCache.get(geometry).orElseGet(() -> {
+        int vbo = SectionGeometryStore.GpuBufferCache.get(geometry).orElseGet(() -> {
             int newBuffer = GL15.glGenBuffers();
             GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, newBuffer);
             // GL_STATIC_DRAW, not GL_STREAM_DRAW: this buffer is now
@@ -148,7 +148,7 @@ public final class TesseraLevelRenderHandler {
             // frame pattern but no longer the right hint now that this
             // buffer outlives a single frame.
             GL15.glBufferData(GL15.GL_ARRAY_BUFFER, geometry.vertexData(), GL15.GL_STATIC_DRAW);
-            TesseraSectionGeometryStore.GpuBufferCache.put(geometry, newBuffer);
+            SectionGeometryStore.GpuBufferCache.put(geometry, newBuffer);
             return newBuffer;
         });
 

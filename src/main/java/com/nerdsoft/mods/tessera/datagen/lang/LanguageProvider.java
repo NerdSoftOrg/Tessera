@@ -2,11 +2,10 @@ package com.nerdsoft.mods.tessera.datagen.lang;
 
 import com.nerdsoft.mods.tessera.Tessera;
 import net.minecraft.data.PackOutput;
-import net.neoforged.neoforge.common.data.LanguageProvider;
 
-public abstract class ModLanguageProvider extends LanguageProvider {
+public abstract class LanguageProvider extends net.neoforged.neoforge.common.data.LanguageProvider {
 
-    public ModLanguageProvider(PackOutput output, String locale) {
+    public LanguageProvider(PackOutput output, String locale) {
         super(output, Tessera.MOD_ID, locale);
     }
 

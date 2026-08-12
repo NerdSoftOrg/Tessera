@@ -1,7 +1,7 @@
 package com.nerdsoft.mods.tessera.vram;
 
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
-import com.nerdsoft.mods.tessera.config.TesseraRulesManager;
+import com.nerdsoft.mods.tessera.config.Config;
+import com.nerdsoft.mods.tessera.config.RulesManager;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GLCapabilities;
@@ -21,8 +21,8 @@ public final class VramBudgetEngine {
     }
 
     public static int getEffectiveBudgetMb() {
-        if (TesseraRulesManager.forcedVramBudgetMb != null) {
-            return TesseraRulesManager.forcedVramBudgetMb;
+        if (RulesManager.forcedVramBudgetMb != null) {
+            return RulesManager.forcedVramBudgetMb;
         }
 
         int hardwareVram = queryHardwareVramMb();
@@ -30,7 +30,7 @@ public final class VramBudgetEngine {
             return (int) (hardwareVram * 0.75);
         }
 
-        return TesseraConfig.VRAM_BUDGET_TARGET_MB.get();
+        return Config.VRAM_BUDGET_TARGET_MB.get();
     }
 
     private static int queryHardwareVramMb() {

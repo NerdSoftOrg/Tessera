@@ -1,6 +1,6 @@
 package com.nerdsoft.mods.tessera.atlas;
 
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
+import com.nerdsoft.mods.tessera.config.Config;
 import com.nerdsoft.mods.tessera.jni.NativeLibraryLoader;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import org.slf4j.Logger;
@@ -76,7 +76,7 @@ public final class SpriteClassifier {
     }
 
     private static NativeFamilyDetector.AlphaShape[] classifyAlphaShapesViaNative(List<SpriteContents> staticSprites) {
-        if (TesseraConfig.DISABLE_NATIVE_COMPRESSION.get() || !NativeLibraryLoader.isAvailable()) {
+        if (Config.DISABLE_NATIVE_COMPRESSION.get() || !NativeLibraryLoader.isAvailable()) {
             return null;
         }
         SpriteLayoutTable layout;
@@ -88,7 +88,7 @@ public final class SpriteClassifier {
         }
         layout.packPixels(staticSprites);
         NativeFamilyDetector.DetectionResult result = NativeFamilyDetector.detect(
-                layout.pixels(), layout.toUntintedSpriteInputs(), 1, 1, TesseraConfig.DEDUP_SIMILARITY_THRESHOLD.get());
+                layout.pixels(), layout.toUntintedSpriteInputs(), 1, 1, Config.DEDUP_SIMILARITY_THRESHOLD.get());
         if (result == null) {
             return null;
         }

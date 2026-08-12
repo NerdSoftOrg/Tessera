@@ -53,12 +53,12 @@ integrated-GPU hardware running texture-heavy modpacks. Everything is built arou
 
 ### 📊 Real-Time F3 Debug Overlay
 
-- `TesseraDebugOverlay` reports live VRAM savings metrics directly in the debug HUD, so you can see exactly what Tessera
+- `DebugOverlay` reports live VRAM savings metrics directly in the debug HUD, so you can see exactly what Tessera
   is doing as you play.
 
 ### 🔌 Public Compression Event API
 
-- `TesseraAtlasCompressEvent` exposes a hook for other mods to observe or react to atlas compression, keeping Tessera
+- `AtlasCompressEvent` exposes a hook for other mods to observe or react to atlas compression, keeping Tessera
   easy to build on top of.
 
 ## Benchmarks / Performance Metrics
@@ -117,7 +117,7 @@ action needed on your part.
 
 ### Compression Rules
 
-Per-atlas compression behavior is governed by `TesseraConfig` and `TesseraRulesManager`, allowing fine-grained control
+Per-atlas compression behavior is governed by `Config` and `RulesManager`, allowing fine-grained control
 over which atlases are eligible for compression.
 
 ## Developer & Contributor Guide

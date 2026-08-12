@@ -6,11 +6,11 @@ import net.neoforged.bus.api.Event;
 import net.neoforged.bus.api.ICancellableEvent;
 
 @SuppressWarnings("unused")
-public abstract class TesseraAtlasCompressEvent extends Event {
+public abstract class AtlasCompressEvent extends Event {
 
     private final TextureAtlas atlas;
 
-    public TesseraAtlasCompressEvent(TextureAtlas atlas) {
+    public AtlasCompressEvent(TextureAtlas atlas) {
         this.atlas = atlas;
     }
 
@@ -18,7 +18,7 @@ public abstract class TesseraAtlasCompressEvent extends Event {
         return atlas;
     }
 
-    public static class Pre extends TesseraAtlasCompressEvent implements ICancellableEvent {
+    public static class Pre extends AtlasCompressEvent implements ICancellableEvent {
 
         private CompressedFormat targetFormat;
 
@@ -36,7 +36,7 @@ public abstract class TesseraAtlasCompressEvent extends Event {
         }
     }
 
-    public static class Post extends TesseraAtlasCompressEvent {
+    public static class Post extends AtlasCompressEvent {
 
         private final CompressedFormat appliedFormat;
         private final long vramBytesSaved;

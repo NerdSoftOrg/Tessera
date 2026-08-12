@@ -1,7 +1,7 @@
 package com.nerdsoft.mods.tessera.gui;
 
 import com.nerdsoft.mods.tessera.Tessera;
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
+import com.nerdsoft.mods.tessera.config.Config;
 import com.nerdsoft.mods.tessera.vram.VramBudgetEngine;
 import net.minecraft.client.Minecraft;
 import net.neoforged.api.distmarker.Dist;
@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 // Compatibility for 1.21
 @SuppressWarnings("removal")
 @EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
-public final class TesseraDebugOverlay {
+public final class DebugOverlay {
 
     private static final int GL_GPU_MEM_INFO_TOTAL_AVAILABLE_NVX = 0x9048;
     private static final int GL_GPU_MEM_INFO_CURRENT_AVAILABLE_NVX = 0x9049;
@@ -99,7 +99,7 @@ public final class TesseraDebugOverlay {
         return Map.copyOf(perAtlasStats);
     }
 
-    private TesseraDebugOverlay() {
+    private DebugOverlay() {
     }
 
     @SubscribeEvent
@@ -137,7 +137,7 @@ public final class TesseraDebugOverlay {
 
                 tesseraLines.add("GPU VRAM: " + getHardwareVramUsage());
 
-                if (TesseraConfig.SHOW_EXTENDED_DEBUG_BREAKDOWN.get()) {
+                if (Config.SHOW_EXTENDED_DEBUG_BREAKDOWN.get()) {
                     appendPerAtlasBreakdown(tesseraLines);
                 }
             }

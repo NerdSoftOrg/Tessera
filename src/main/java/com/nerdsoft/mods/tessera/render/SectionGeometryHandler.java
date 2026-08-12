@@ -29,12 +29,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Compile-side counterpart to {@link TesseraModelWrapper}: walks every
+ * Compile-side counterpart to {@link ModelWrapper}: walks every
  * block in a section being (re)compiled, and for any block whose model
- * reported Tessera-routed quads (the ones {@link TesseraModelWrapper}
+ * reported Tessera-routed quads (the ones {@link ModelWrapper}
  * suppressed from vanilla's own {@code solid()}/{@code cutoutMipped()}
  * output), builds vertex data for those quads and stores it via
- * {@link TesseraSectionGeometryStore} for {@link TesseraLevelRenderHandler}
+ * {@link SectionGeometryStore} for {@link LevelRenderHandler}
  * to draw later.
  *
  * <h2>Confirmed vs. unconfirmed in this class</h2>
@@ -51,12 +51,12 @@ import java.util.Map;
  * method surface beyond {@code getOrCreateChunkBuffer(RenderType)}
  * (confirmed restricted to {@code RenderType.chunkBufferLayers()}, and
  * therefore not usable for Tessera's own atlas-bound geometry -- see
- * {@link TesseraModelWrapper}'s doc for the three-way confirmation of that
+ * {@link ModelWrapper}'s doc for the three-way confirmation of that
  * restriction) could not be enumerated from available sources during this
  * session. This handler therefore does not use
  * {@code SectionRenderingContext} for vertex output at all -- it builds
  * raw vertex bytes manually (see {@link #tessera$bakeVertices}) and hands
- * them directly to {@link TesseraSectionGeometryStore}, bypassing
+ * them directly to {@link SectionGeometryStore}, bypassing
  * {@code SectionRenderingContext} entirely except as the signal that a
  * rebuild is happening. If {@code SectionRenderingContext} turns out to
  * expose a lower-level raw-buffer-write method, routing through it instead
@@ -78,14 +78,14 @@ import java.util.Map;
 // Compatibility for 1.21
 @SuppressWarnings("removal")
 @EventBusSubscriber(modid = Tessera.MOD_ID, value = Dist.CLIENT, bus = EventBusSubscriber.Bus.GAME)
-public final class TesseraSectionGeometryHandler {
+public final class SectionGeometryHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera/SectionGeometryHandler");
     private static final int SECTION_SIZE = 16;
     private static final List<RenderType> SUPPRESSIBLE_LAYERS =
             List.of(RenderType.solid(), RenderType.cutoutMipped(), RenderType.cutout());
 
-    private TesseraSectionGeometryHandler() {
+    private SectionGeometryHandler() {
     }
 
     @SubscribeEvent
@@ -114,7 +114,7 @@ public final class TesseraSectionGeometryHandler {
      * every Tessera-routed quad in this section, one
      * {@code CompiledSectionGeometry} per {@link AtlasSplitTarget} that
      * had at least one quad, and stores both via
-     * {@link TesseraSectionGeometryStore#putSection}.
+     * {@link SectionGeometryStore#putSection}.
      */
     private static void tessera$buildSectionGeometry(BlockPos sectionOrigin, Level level) {
         Map<AtlasSplitTarget, List<Float>> vertexFloatsByTarget = new EnumMap<>(AtlasSplitTarget.class);
@@ -148,7 +148,7 @@ public final class TesseraSectionGeometryHandler {
             List<Float> floats = vertexFloatsByTarget.get(target);
             int quadCount = quadCountByTarget.getOrDefault(target, 0);
             if (floats == null || quadCount == 0) {
-                TesseraSectionGeometryStore.removeSectionTarget(sectionOrigin, target);
+                SectionGeometryStore.removeSectionTarget(sectionOrigin, target);
                 continue;
             }
 
@@ -158,8 +158,8 @@ public final class TesseraSectionGeometryHandler {
             }
             vertexData.rewind();
 
-            TesseraSectionGeometryStore.putSection(sectionOrigin, target,
-                    new TesseraSectionGeometryStore.CompiledSectionGeometry(vertexData, quadCount));
+            SectionGeometryStore.putSection(sectionOrigin, target,
+                    new SectionGeometryStore.CompiledSectionGeometry(vertexData, quadCount));
             totalTesseraQuads += quadCount;
         }
 
@@ -170,7 +170,7 @@ public final class TesseraSectionGeometryHandler {
 
     /**
      * For one block position: gets its model's quads per suppressible
-     * layer (mirroring {@link TesseraModelWrapper}'s own layer set) using
+     * layer (mirroring {@link ModelWrapper}'s own layer set) using
      * the model directly (not through {@code TesseraModelWrapper}, which
      * would suppress exactly the quads this method needs to collect --
      * calling the wrapped/original model directly sidesteps that, since

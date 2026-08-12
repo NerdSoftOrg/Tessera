@@ -1,7 +1,7 @@
 package com.nerdsoft.mods.tessera.compress;
 
 import com.nerdsoft.mods.tessera.cache.AtlasCache;
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
+import com.nerdsoft.mods.tessera.config.Config;
 import com.nerdsoft.mods.tessera.jni.NativeBridge;
 import com.nerdsoft.mods.tessera.jni.NativeLibraryLoader;
 import org.slf4j.Logger;
@@ -29,33 +29,6 @@ public final class CompressionPipeline {
         this.cache = cache;
     }
 
-    /**
-     * Which block-compression format a given bucket compresses to.
-     * Bytes-per-block differs by exactly 2x (BC1 is 8, BC7 is 16), which is
-     * the whole reason the opaque bucket is worth splitting out in the
-     * first place -- see {@link #bytesPerBlock()}.
-     */
-    public enum Target {
-        BC1(8, AtlasCache.CompressedFormat.BC1),
-        BC7(16, AtlasCache.CompressedFormat.BC7);
-
-        private final int bytesPerBlock;
-        private final AtlasCache.CompressedFormat cacheFormat;
-
-        Target(int bytesPerBlock, AtlasCache.CompressedFormat cacheFormat) {
-            this.bytesPerBlock = bytesPerBlock;
-            this.cacheFormat = cacheFormat;
-        }
-
-        public int bytesPerBlock() {
-            return bytesPerBlock;
-        }
-
-        public AtlasCache.CompressedFormat cacheFormat() {
-            return cacheFormat;
-        }
-    }
-
     private static long projectedCompressedSize(int width, int height, Target target) {
         long blocksX = (width + BLOCK_TEXELS - 1) / BLOCK_TEXELS;
         long blocksY = (height + BLOCK_TEXELS - 1) / BLOCK_TEXELS;
@@ -63,13 +36,13 @@ public final class CompressionPipeline {
     }
 
     public Optional<CompressionResult> compress(ByteBuffer rgba8Direct, int width, int height, Target target) {
-        if (TesseraConfig.DISABLE_NATIVE_COMPRESSION.get() || !NativeLibraryLoader.isAvailable()) {
+        if (Config.DISABLE_NATIVE_COMPRESSION.get() || !NativeLibraryLoader.isAvailable()) {
             return Optional.empty();
         }
         if (target == Target.BC7 && !Bc7GpuSupport.isSupported()) {
             return Optional.empty();
         }
-        if (target == Target.BC1 && !NativeBridge.isBc1NativeAvailable()) {
+        if (target == Target.BC1 && (!NativeBridge.isBc1NativeAvailable() || !Bc1TextureFormatSupport.isSupported())) {
             return Optional.empty();
         }
 
@@ -83,9 +56,7 @@ public final class CompressionPipeline {
 
         int qualityPreset = resolveQualityPresetForBudget(width, height, target);
 
-        ByteBuffer compressed = target == Target.BC1
-                ? NativeBridge.compressBC1(rgba8Direct, width, height, qualityPreset)
-                : NativeBridge.compressBC7(rgba8Direct, width, height, qualityPreset);
+        ByteBuffer compressed = target == Target.BC1 ? NativeBridge.compressBC1(rgba8Direct, width, height, qualityPreset) : NativeBridge.compressBC7(rgba8Direct, width, height, qualityPreset);
         if (compressed == null) {
             LOGGER.warn("Native {} compression call returned no result; falling back to vanilla atlas upload.", target);
             return Optional.empty();
@@ -117,8 +88,7 @@ public final class CompressionPipeline {
 
     private Optional<CompressionResult> tryReadCache(String hash, Target target) {
         try {
-            return cache.read(hash, target.cacheFormat()).map(hit ->
-                    new CompressionResult(hit.compressedBlocks(), hit.qualityPreset(), true));
+            return cache.read(hash, target.cacheFormat()).map(hit -> new CompressionResult(hit.compressedBlocks(), hit.qualityPreset(), true));
         } catch (IOException e) {
             LOGGER.warn("Failed to read disk cache entry {}; recompressing.", hash, e);
             return Optional.empty();
@@ -126,10 +96,10 @@ public final class CompressionPipeline {
     }
 
     private int resolveQualityPresetForBudget(int width, int height, Target target) {
-        int preset = TesseraConfig.COMPRESSION_QUALITY.get();
-        long budgetBytes = TesseraConfig.VRAM_BUDGET_TARGET_MB.get() * 1024L * 1024L;
+        int preset = Config.COMPRESSION_QUALITY.get();
+        long budgetBytes = Config.VRAM_BUDGET_TARGET_MB.get() * 1024L * 1024L;
         long projectedBytes = projectedCompressedSize(width, height, target);
-        int maxAttempts = TesseraConfig.MAX_QUALITY_STEP_DOWN_ATTEMPTS.get();
+        int maxAttempts = Config.MAX_QUALITY_STEP_DOWN_ATTEMPTS.get();
 
         int attempts = 0;
         while (projectedBytes > budgetBytes && preset > 0 && attempts < maxAttempts) {
@@ -138,17 +108,36 @@ public final class CompressionPipeline {
         }
 
         if (projectedBytes > budgetBytes) {
-            LOGGER.warn(
-                    "Atlas bucket ({}x{}, ~{} MB as {}) exceeds vramBudgetTargetMb ({} MB); {} is a fixed "
-                            + "{}-bits-per-pixel format, so compressionQuality only affects encode fidelity here, "
-                            + "not resident size. Lower dedupSimilarityThreshold or vramBudgetTargetMb expectations, "
-                            + "or accept the overage.",
-                    width, height, projectedBytes / (1024 * 1024), target, budgetBytes / (1024 * 1024),
-                    target, target.bytesPerBlock() / 2
-            );
+            LOGGER.warn("Atlas bucket ({}x{}, ~{} MB as {}) exceeds vramBudgetTargetMb ({} MB); {} is a fixed " + "{}-bits-per-pixel format, so compressionQuality only affects encode fidelity here, " + "not resident size. Lower dedupSimilarityThreshold or vramBudgetTargetMb expectations, " + "or accept the overage.", width, height, projectedBytes / (1024 * 1024), target, budgetBytes / (1024 * 1024), target, target.bytesPerBlock() / 2);
         }
 
         return preset;
+    }
+
+    /**
+     * Which block-compression format a given bucket compresses to.
+     * Bytes-per-block differs by exactly 2x (BC1 is 8, BC7 is 16), which is
+     * the whole reason the opaque bucket is worth splitting out in the
+     * first place -- see {@link #bytesPerBlock()}.
+     */
+    public enum Target {
+        BC1(8, AtlasCache.CompressedFormat.BC1), BC7(16, AtlasCache.CompressedFormat.BC7);
+
+        private final int bytesPerBlock;
+        private final AtlasCache.CompressedFormat cacheFormat;
+
+        Target(int bytesPerBlock, AtlasCache.CompressedFormat cacheFormat) {
+            this.bytesPerBlock = bytesPerBlock;
+            this.cacheFormat = cacheFormat;
+        }
+
+        public int bytesPerBlock() {
+            return bytesPerBlock;
+        }
+
+        public AtlasCache.CompressedFormat cacheFormat() {
+            return cacheFormat;
+        }
     }
 
     public record CompressionResult(ByteBuffer compressedBlocks, int qualityPresetUsed, boolean fromCache) {

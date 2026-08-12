@@ -13,11 +13,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * vanilla's own {@code RenderChunk}-held {@code VertexBuffer}s, but for the
  * two Tessera render types that cannot participate in vanilla's own
  * {@code chunkBufferLayers()} compile/draw cycle (see
- * {@link TesseraModelWrapper}'s doc for why not).
+ * {@link ModelWrapper}'s doc for why not).
  *
  * <h2>Lifecycle</h2>
  * <ul>
- *   <li>{@link TesseraSectionGeometryHandler} populates one entry per
+ *   <li>{@link SectionGeometryHandler} populates one entry per
  *       section per {@link AtlasSplitTarget}, whenever
  *       {@code AddSectionGeometryEvent} fires for that section -- i.e. on
  *       initial chunk load and on every subsequent rebuild triggered by a
@@ -26,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *       implemented or needed: Tessera's geometry goes stale at exactly
  *       the same moments vanilla's own compiled buffers do, and is rebuilt
  *       at exactly the same moments, for free, by riding on this event.</li>
- *   <li>{@link TesseraLevelRenderHandler} reads (never writes) during
+ *   <li>{@link LevelRenderHandler} reads (never writes) during
  *       {@code RenderLevelStageEvent}, once per frame per stage.</li>
  *   <li>Entries are removed when a section is known to be gone (unloaded)
  *       -- see {@link #removeSection}. Not currently wired to any event:
@@ -43,9 +43,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *       memory-growth gap rather than leaving it silently unmentioned.</li>
  * </ul>
  */
-public final class TesseraSectionGeometryStore {
+public final class SectionGeometryStore {
 
-    private TesseraSectionGeometryStore() {
+    private SectionGeometryStore() {
     }
 
     /**
@@ -70,7 +70,7 @@ public final class TesseraSectionGeometryStore {
      * Render-thread-only cache mapping a specific
      * {@link CompiledSectionGeometry} instance to the persistent GL
      * buffer object already holding its uploaded contents. Used by
-     * {@link TesseraLevelRenderHandler} to avoid creating and destroying
+     * {@link LevelRenderHandler} to avoid creating and destroying
      * a transient VBO every section every frame -- an earlier version of
      * that class did exactly that, which is correct but wasteful
      * (allocate + upload + delete, every section, every frame, even for
@@ -94,7 +94,7 @@ public final class TesseraSectionGeometryStore {
      * entry only wastes a small amount of render-thread-owned GPU memory
      * (one small VBO) until this gap is closed alongside this class's
      * already-documented section-unload gap; it does not cause incorrect
-     * rendering, since {@link TesseraLevelRenderHandler} only ever looks
+     * rendering, since {@link LevelRenderHandler} only ever looks
      * up a cache entry for a {@code CompiledSectionGeometry} it is
      * actively about to draw.
      */
@@ -128,7 +128,7 @@ public final class TesseraSectionGeometryStore {
     private static final Map<SectionKey, Map<AtlasSplitTarget, CompiledSectionGeometry>> SECTIONS = new ConcurrentHashMap<>();
 
     /**
-     * Called from {@link TesseraSectionGeometryHandler}'s
+     * Called from {@link SectionGeometryHandler}'s
      * {@code AdditionalSectionRenderer} callback, which per
      * {@code AddSectionGeometryEvent}'s own documentation runs on
      * "the thread performing the rebuild, which will typically not be the
@@ -165,7 +165,7 @@ public final class TesseraSectionGeometryStore {
     }
 
     /**
-     * Render-thread iteration for {@link TesseraLevelRenderHandler}.
+     * Render-thread iteration for {@link LevelRenderHandler}.
      * {@code action}'s first argument is the section origin reconstructed
      * from the internal key -- allocates one {@link BlockPos} per section
      * per draw call, which is a small, bounded per-frame allocation

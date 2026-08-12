@@ -2,9 +2,9 @@ package com.nerdsoft.mods.tessera.datagen.lang;
 
 import net.minecraft.data.PackOutput;
 
-public class ModEsEsLanguageProvider extends ModLanguageProvider {
+public class EsEsLanguageProvider extends LanguageProvider {
 
-    public ModEsEsLanguageProvider(PackOutput output) {
+    public EsEsLanguageProvider(PackOutput output) {
         super(output, "es_es");
     }
 

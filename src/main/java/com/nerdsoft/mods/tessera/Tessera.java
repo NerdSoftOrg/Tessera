@@ -1,8 +1,8 @@
 package com.nerdsoft.mods.tessera;
 
 import com.nerdsoft.mods.tessera.compress.Bc7GpuSupport;
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
-import com.nerdsoft.mods.tessera.config.TesseraRulesManager;
+import com.nerdsoft.mods.tessera.config.Config;
+import com.nerdsoft.mods.tessera.config.RulesManager;
 import com.nerdsoft.mods.tessera.datagen.DataGenerators;
 import com.nerdsoft.mods.tessera.jni.NativeLibraryLoader;
 import net.neoforged.api.distmarker.Dist;
@@ -25,7 +25,7 @@ public final class Tessera {
     private static final Logger LOGGER = LoggerFactory.getLogger("Tessera");
 
     public Tessera(IEventBus modEventBus, ModContainer modContainer) {
-        modContainer.registerConfig(ModConfig.Type.CLIENT, TesseraConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.CLIENT, Config.SPEC);
 
         modContainer.registerExtensionPoint(
                 IConfigScreenFactory.class,
@@ -61,7 +61,7 @@ public final class Tessera {
     }
 
     private void onRegisterReloadListeners(RegisterClientReloadListenersEvent event) {
-        event.registerReloadListener(new TesseraRulesManager());
+        event.registerReloadListener(new RulesManager());
         // Registered purely for reload-lifecycle participation -- see
         // TesseraSplitAtlasManager's class doc for why its actual
         // stitch/upload work rides on SpriteLoader.stitch()/TextureAtlas

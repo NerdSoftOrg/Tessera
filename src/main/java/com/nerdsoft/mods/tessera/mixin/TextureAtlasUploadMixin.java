@@ -1,7 +1,7 @@
 package com.nerdsoft.mods.tessera.mixin;
 
 import com.nerdsoft.mods.tessera.TesseraClient;
-import com.nerdsoft.mods.tessera.config.TesseraRulesManager;
+import com.nerdsoft.mods.tessera.config.RulesManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.SpriteLoader;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -36,7 +36,7 @@ public abstract class TextureAtlasUploadMixin {
         TextureAtlas self = (TextureAtlas) (Object) this;
         ResourceLocation atlasLocation = self.location();
 
-        if (TesseraRulesManager.BLACKLISTED_ATLASES.contains(atlasLocation.toString())) {
+        if (RulesManager.BLACKLISTED_ATLASES.contains(atlasLocation.toString())) {
             return;
         }
 

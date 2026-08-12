@@ -1,8 +1,11 @@
 package com.nerdsoft.mods.tessera.mixin;
 
 import com.nerdsoft.mods.tessera.TesseraClient;
-import com.nerdsoft.mods.tessera.config.TesseraConfig;
-import com.nerdsoft.mods.tessera.config.TesseraRulesManager;
+import com.nerdsoft.mods.tessera.atlas.SplitAtlasManager;
+import com.nerdsoft.mods.tessera.config.Config;
+import com.nerdsoft.mods.tessera.config.RulesManager;
+import com.nerdsoft.mods.tessera.render.ModelWrapper;
+import com.nerdsoft.mods.tessera.render.SectionGeometryHandler;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.SpriteLoader;
 import net.minecraft.resources.ResourceLocation;
@@ -34,8 +37,8 @@ import java.util.concurrent.Executor;
  * time, on the same reload -- since the static sprite was never stitched
  * there, every one of those lookups permanently baked
  * {@code MissingTextureAtlasSprite}'s UVs into the quad. Baking cannot be
- * re-run once this happens; {@link com.nerdsoft.mods.tessera.render.TesseraModelWrapper}
- * and {@link com.nerdsoft.mods.tessera.render.TesseraSectionGeometryHandler}
+ * re-run once this happens; {@link ModelWrapper}
+ * and {@link SectionGeometryHandler}
  * only suppress/re-collect *already-baked* quads at compile time, so they
  * were re-collecting quads whose UVs were already permanently wrong --
  * hence static geometry rendering invisible (sampling the 0-alpha corner
@@ -66,7 +69,7 @@ public abstract class SpriteRoutingMixin {
     private ResourceLocation location;
 
     /**
-     * Guards against re-entrancy: {@link com.nerdsoft.mods.tessera.atlas.TesseraSplitAtlasManager}
+     * Guards against re-entrancy: {@link SplitAtlasManager}
      * calls {@code SpriteLoader.create(atlas).stitch(...)} on its own two
      * atlases as part of servicing this same interception, which would
      * otherwise recurse back into this mixin for those calls too.
@@ -79,7 +82,7 @@ public abstract class SpriteRoutingMixin {
      * {@code @ModifyVariable}, since {@code allSprites} must reach
      * vanilla's own stitch body completely unmodified (see class doc).
      * Splits off a *copy* of the static subset and hands it to
-     * {@link com.nerdsoft.mods.tessera.atlas.TesseraSplitAtlasManager}
+     * {@link SplitAtlasManager}
      * as a side effect, without altering what the real method body sees.
      */
     @Inject(method = "stitch", at = @At("HEAD"))
@@ -121,9 +124,9 @@ public abstract class SpriteRoutingMixin {
 
     @Unique
     private boolean tessera$shouldSplit() {
-        if (TesseraConfig.DISABLE_NATIVE_COMPRESSION.get()) {
+        if (Config.DISABLE_NATIVE_COMPRESSION.get()) {
             return false;
         }
-        return !TesseraRulesManager.BLACKLISTED_ATLASES.contains(this.location.toString());
+        return !RulesManager.BLACKLISTED_ATLASES.contains(this.location.toString());
     }
 }
