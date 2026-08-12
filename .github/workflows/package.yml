@@ -27,7 +27,7 @@ jobs:
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -75,7 +75,7 @@ jobs:
           fi
 
       - name: Cache cargo registry and target dir
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index/
@@ -139,7 +139,7 @@ jobs:
           cp "$LIB" "staged-natives/natives/${{ matrix.platform_dir }}/$(basename "$LIB")"
 
       - name: Upload native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: native-${{ matrix.platform_dir }}
           path: staged-natives/natives/${{ matrix.platform_dir }}/*
@@ -150,16 +150,16 @@ jobs:
     needs: build-native
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Download all native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: native-*
           path: downloaded-natives
@@ -199,7 +199,7 @@ jobs:
           done
 
       - name: Upload JAR artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tessera-jar
           path: build/libs/**/*.jar
